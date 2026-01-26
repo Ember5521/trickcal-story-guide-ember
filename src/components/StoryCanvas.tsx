@@ -5,7 +5,7 @@ import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
     X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone,
-    Image as ImageIcon
+    Image as ImageIcon, Shield
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import ReactFlow, {
@@ -914,7 +914,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                             <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
                                 <div className="flex items-center gap-2 text-indigo-400 font-bold">
-                                    <Settings size={20} />
+                                    <Shield size={20} />
                                     <span>{editingNodeId ? '노드 데이터 수정' : '새 스토리 노드 추가'}</span>
                                 </div>
                                 <button onClick={() => setShowForm(false)} className="text-slate-500 hover:text-white transition-colors">
@@ -1110,8 +1110,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 )
             }
 
-            <div className="fixed bottom-6 right-6 z-50 opacity-30 hover:opacity-100 transition-opacity">
-                <button onClick={toggleAdmin} className="p-2 rounded-xl bg-slate-800/50 text-slate-400 border border-slate-700 shadow-lg hover:bg-slate-700 transition-all"><Settings size={18} /></button>
+            <div className="fixed bottom-6 right-6 z-50 opacity-[0.05] hover:opacity-100 transition-opacity">
+                <button onClick={toggleAdmin} className="p-2 rounded-xl bg-slate-800/50 text-slate-400 border border-slate-700 shadow-lg hover:bg-slate-700 transition-all"><Shield size={18} /></button>
             </div>
 
             {

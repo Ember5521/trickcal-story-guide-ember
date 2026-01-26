@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -43,6 +43,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [isAdmin, setIsAdmin] = useState(false);
     const [selectedDetailNode, setSelectedDetailNode] = useState<Node | null>(null);
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+    const [searchIndex, setSearchIndex] = useState(0);
 
     // Admin States
     const [showForm, setShowForm] = useState(false);
@@ -176,18 +177,15 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const ROW_GAP = 6;
     const SLOT_UNIT = 80; // Slightly tighter slot unit
 
-    // Layout Logic (Slot-based Engine with Normalization & De-clumping)
+    // Layout Logic (Slot-based Engine)
     const layoutInfo = useMemo(() => {
-        const query = searchQuery.toLowerCase();
-        const filtered = nodes.filter(n =>
-            n.data.label.toLowerCase().includes(query) ||
-            n.data.protagonist?.toLowerCase().includes(query)
-        );
+        // Render ALL nodes for continuity
+        const nodesToLayout = nodes;
 
-        if (filtered.length === 0) return { nodes: [], totalHeight: 1000, maxRow: 10 };
+        if (nodesToLayout.length === 0) return { nodes: [], totalHeight: 1000, maxRow: 10 };
 
-        // 1. Static Grid Mapping (No normalization, no de-clumping)
-        const slottedNodes = filtered.map(node => {
+        // 1. Static Grid Mapping
+        const slottedNodes = nodesToLayout.map(node => {
             const curY = node.data.m_y ?? node.position.y;
             const curX = node.data.m_x ?? node.position.x;
 
@@ -210,7 +208,40 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             totalHeight: (maxRow + 10) * (ROW_HEIGHT + ROW_GAP) + 400,
             maxRow
         };
+    }, [nodes]);
+
+    const matchedNodeIds = useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+        if (query.length < 2) return [];
+
+        return nodes
+            .filter(n => {
+                const labelMatch = n.data.label.toLowerCase().includes(query);
+                if (n.data.type === 'main') return labelMatch;
+                return labelMatch || n.data.protagonist?.toLowerCase().includes(query);
+            })
+            .map(n => n.id);
     }, [nodes, searchQuery]);
+
+    const scrollToMatch = (id: string) => {
+        if (!scrollRef.current) return;
+        const nodeLayout = layoutInfo.nodes.find(n => n.id === id);
+        if (!nodeLayout) return;
+
+        const top = nodeLayout.renderTop;
+        scrollRef.current.scrollTo({
+            top: Math.max(0, top - 150),
+            behavior: 'smooth'
+        });
+    };
+
+    // Auto-scroll on search start
+    useEffect(() => {
+        if (matchedNodeIds.length > 0) {
+            setSearchIndex(0);
+            scrollToMatch(matchedNodeIds[0]);
+        }
+    }, [searchQuery, matchedNodeIds.length]);
 
     const toggleWatch = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -378,8 +409,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 <Plus size={16} />
                             </button>
                         )}
-                        <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800/50 border-slate-700/30 text-slate-400'}`}>
-                            <Settings size={16} />
+                        <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-transparent border-none text-slate-800 opacity-[0.15] hover:opacity-50'}`}>
+                            <Shield size={16} />
                         </button>
                     </div>
                 </div>
@@ -388,7 +419,35 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                         <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-slate-800/50 border border-slate-700/30 rounded-lg py-2 pl-9 pr-3 text-xs focus:ring-1 focus:ring-indigo-500/50 outline-none transition-all" />
+                        {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">✕</button>}
                     </div>
+                    {matchedNodeIds.length > 0 && (
+                        <div className="flex items-center bg-slate-800/50 border border-slate-700/30 rounded-lg px-2 py-1.5 gap-2 shrink-0 animate-in fade-in slide-in-from-right-2">
+                            <span className="text-[10px] font-bold text-slate-400">{searchIndex + 1}/{matchedNodeIds.length}</span>
+                            <div className="flex gap-1">
+                                <button
+                                    onClick={() => {
+                                        const next = (searchIndex - 1 + matchedNodeIds.length) % matchedNodeIds.length;
+                                        setSearchIndex(next);
+                                        scrollToMatch(matchedNodeIds[next]);
+                                    }}
+                                    className="p-0.5"
+                                >
+                                    <ChevronLeft size={14} />
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const next = (searchIndex + 1) % matchedNodeIds.length;
+                                        setSearchIndex(next);
+                                        scrollToMatch(matchedNodeIds[next]);
+                                    }}
+                                    className="p-0.5"
+                                >
+                                    <ChevronRight size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <button onClick={() => setShowMemo(true)} className={`p-2 bg-slate-800/50 rounded-lg border border-slate-700/30 ${memoText.trim() ? 'text-indigo-400' : 'text-slate-500'}`}><StickyNote size={16} /></button>
                     <div className="relative">
                         <select value={season} onChange={(e) => setSeason(Number(e.target.value))} className="appearance-none bg-slate-800/70 border border-slate-700/30 text-[10px] font-black text-white px-3 py-2 pr-7 rounded-lg outline-none">
@@ -464,7 +523,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     padding: '4px'
                                 }}
                             >
-                                <div className={`h-full group relative bg-slate-900/40 border border-slate-800/40 rounded-xl overflow-hidden backdrop-blur-md transition-all ${node.data.watched ? 'opacity-30 grayscale-[0.8]' : 'hover:bg-slate-800/60 shadow-lg'} ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800' : ''}`}>
+                                <div className={`h-full group relative bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all ${node.data.watched ? 'opacity-30 grayscale-[0.8]' : 'hover:bg-slate-800/60 shadow-lg'} ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800' : ''} ${matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] border-yellow-400/50' : 'border-slate-800/40'}`}>
                                     <div className="flex items-center h-full">
                                         <div className="relative h-full aspect-square bg-black/20 shrink-0 flex items-center justify-center p-1 border-r border-slate-800/30">
                                             <img src={getImageUrl(node.data.image)} alt={node.data.label} className="max-w-full max-h-full object-contain drop-shadow-2xl" />
@@ -538,7 +597,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm flex flex-col max-h-[90vh]">
                         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                            <h2 className="text-sm font-black text-indigo-400 uppercase tracking-widest">{editingNode ? 'Edit Node' : 'New Node'}</h2>
+                            <h2 className="text-sm font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                                <Shield size={16} />
+                                {editingNode ? 'Edit Node' : 'New Node'}
+                            </h2>
                             <button onClick={() => setShowForm(false)} className="text-slate-500"><X size={20} /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-4">
