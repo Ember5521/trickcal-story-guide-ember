@@ -102,6 +102,36 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         if (savedMemo) setMemoText(savedMemo);
     }, []);
 
+    // Handle History (Back Button)
+    useEffect(() => {
+        const handlePopState = (e: PopStateEvent) => {
+            // Priority: Player > Detail > Others
+            if (activeVideoUrl) {
+                setActiveVideoUrl(null);
+            } else if (selectedDetailNode) {
+                setSelectedDetailNode(null);
+            } else if (showInfo) {
+                setShowInfo(false);
+            } else if (showMemo) {
+                setShowMemo(false);
+            }
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [activeVideoUrl, selectedDetailNode, showInfo, showMemo]);
+
+    // Push states to history to enable back button closing
+    useEffect(() => {
+        // If any modal becomes open, push a state
+        const anyOpen = !!selectedDetailNode || !!activeVideoUrl || showInfo || showMemo;
+        if (anyOpen) {
+            // Check if we already pushed for this state to avoid loops
+            // Using a simple state check
+            window.history.pushState({ modal: true }, '');
+        }
+    }, [!!selectedDetailNode, !!activeVideoUrl, showInfo, showMemo]);
+
     // Save Memo
     useEffect(() => {
         localStorage.setItem('user_story_memo', memoText);
@@ -606,10 +636,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
             {/* Selected Node Detail Modal */}
             {selectedDetailNode && (
-                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-2xl animate-in fade-in duration-300 overflow-y-auto pt-10 pb-20">
+                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-950/10 backdrop-blur-xl animate-in fade-in duration-500 overflow-y-auto pt-10 pb-20">
                     <button
-                        onClick={() => setSelectedDetailNode(null)}
-                        className="fixed top-6 right-6 z-[410] p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all border border-white/20"
+                        onClick={() => {
+                            setSelectedDetailNode(null);
+                            window.history.back();
+                        }}
+                        className="fixed top-6 right-6 z-[410] p-3 rounded-full bg-slate-800/80 text-white hover:bg-slate-700 transition-all border border-slate-700/50 shadow-xl"
                     >
                         <X size={24} />
                     </button>
@@ -658,13 +691,16 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     </div>
 
                     {/* Background Click to Close */}
-                    <div className="absolute inset-0 -z-10" onClick={() => setSelectedDetailNode(null)} />
+                    <div className="absolute inset-0 -z-10" onClick={() => {
+                        setSelectedDetailNode(null);
+                        window.history.back();
+                    }} />
                 </div>
             )}
 
             {/* Integrated YouTube Player Modal */}
             {activeVideoUrl && (
-                <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/90 backdrop-blur-xl animate-in fade-in duration-300 p-4">
+                <div className="fixed inset-0 z-[500] flex items-center justify-center bg-slate-950/60 backdrop-blur-2xl animate-in fade-in duration-300 p-4">
                     <div className="w-full max-w-4xl relative aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10">
                         <iframe
                             src={`https://www.youtube.com/embed/${getYouTubeId(activeVideoUrl)}?autoplay=1`}
@@ -674,13 +710,19 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             title="YouTube Video"
                         />
                         <button
-                            onClick={() => setActiveVideoUrl(null)}
-                            className="absolute -top-12 right-0 p-2 text-white/60 hover:text-white transition-colors flex items-center gap-2 font-black text-xs uppercase"
+                            onClick={() => {
+                                setActiveVideoUrl(null);
+                                window.history.back();
+                            }}
+                            className="absolute -top-12 right-0 p-2 text-white/80 hover:text-white transition-colors flex items-center gap-2 font-black text-[10px] uppercase tracking-widest"
                         >
-                            CLOSE PLAYER <X size={20} />
+                            CLOSE <X size={18} />
                         </button>
                     </div>
-                    <div className="absolute inset-0 -z-10" onClick={() => setActiveVideoUrl(null)} />
+                    <div className="absolute inset-0 -z-10" onClick={() => {
+                        setActiveVideoUrl(null);
+                        window.history.back();
+                    }} />
                 </div>
             )}
         </div>
