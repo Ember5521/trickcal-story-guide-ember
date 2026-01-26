@@ -535,11 +535,14 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         </div>
 
                                         <div className="flex-1 px-2.5 min-w-0 flex flex-col justify-center gap-1">
-                                            {/* Top Row: Type */}
-                                            <div className="flex items-center">
+                                            {/* Top Row: Type & Video Indicator */}
+                                            <div className="flex items-center gap-1.5">
                                                 <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-500/20 text-slate-400'}`}>
                                                     {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : 'ETC'}
                                                 </span>
+                                                {node.data.youtubeUrl && (
+                                                    <Youtube size={10} className="text-rose-500/60" />
+                                                )}
                                             </div>
 
                                             {/* Bottom Row: Title | Watch Button */}
