@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef, memo } from '
 import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
-    X, Download, Upload, RotateCcw, Home, StickyNote, Info,
+    X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone,
     Image as ImageIcon
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -49,13 +49,14 @@ const viewportSelector = (state: any) => ({
     zoom: state.transform[2],
 });
 
-function StoryCanvasInner() {
+function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => void, isMobileView: boolean }) {
     const { setCenter, screenToFlowPosition, getViewport, setViewport } = useReactFlow();
     // Core State
     const [nodes, setNodes] = useState<Node<StoryNodeData>[]>(initialNodes);
     const [edges, setEdges] = useState<Edge[]>(initialEdges);
     const [isAdmin, setIsAdmin] = useState(false);
     const [season, setSeason] = useState(1);
+    const [isLoaded, setIsLoaded] = useState(false);
 
     // UI State
     const [showForm, setShowForm] = useState(false);
@@ -483,6 +484,7 @@ function StoryCanvasInner() {
             // Clear current data immediately when switching seasons to avoid mixed view
             setNodes([]);
             setEdges([]);
+            setIsLoaded(false);
 
             try {
                 const sn = localStorage.getItem(`stories_s${season}`);
@@ -512,9 +514,10 @@ function StoryCanvasInner() {
                 }
             } catch (err) {
                 console.error("Data load error:", err);
-                // Fallback to empty state instead of crashing
                 setNodes([]);
                 setEdges([]);
+            } finally {
+                setIsLoaded(true);
             }
         };
         load();
@@ -533,14 +536,14 @@ function StoryCanvasInner() {
         }
     }, [memoText]);
 
-    // Admin Cloud Sync (Debounced)
+    // Admin Cloud Sync (Debounced with isLoaded Guard)
     useEffect(() => {
-        if (!isAdmin) return;
+        if (!isAdmin || !isLoaded) return;
         const timer = setTimeout(() => {
             syncToCloud(nodes, edges);
         }, 2000); // Sync after 2 seconds of inactivity
         return () => clearTimeout(timer);
-    }, [nodes, edges, isAdmin]);
+    }, [nodes, edges, isAdmin, isLoaded]);
 
     // Independent Initial Focus Trigger
     useEffect(() => {
@@ -774,59 +777,88 @@ function StoryCanvasInner() {
                 }}
             />
 
-            <header className="bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 p-4 flex items-center justify-between z-50">
-                <div className="flex items-center gap-3">
-                    <div className="group relative flex items-center justify-center">
-                        <div className="p-2 rounded-xl bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 cursor-help transition-all border border-slate-700/50">
-                            <Info size={18} />
+            <header className="bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 p-2 md:p-4 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-4 z-50">
+                <div className="flex items-center justify-between w-full md:w-auto gap-3 shrink-0">
+                    <div className="flex items-center gap-2">
+                        <div className="group relative flex items-center justify-center">
+                            <div className="p-2 rounded-xl bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 cursor-help transition-all border border-slate-700/50">
+                                <Info size={18} />
+                            </div>
+                            <div className="absolute top-full left-0 mt-2 w-64 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[100] scale-95 group-hover:scale-100 origin-top-left pointer-events-none">
+                                <p className="text-xs leading-relaxed text-slate-300">
+                                    <b>가이드 안내</b><br />
+                                    • 본 스토리 가이드는 공식 가이드가 아닙니다.<br />
+                                    • 극장 개편에 따라 기존 출시 순서와 인게임 내 실제 접근 가능한 순서를 종합적으로 고려하여 정리된 순서로, 일부 어색한 부분이 있을 수 있습니다.<br />
+                                    • 본 사이트는 문제가 발생할 경우 즉시 운영을 중단할 수 있으며, 모든 영상 및 이미지에 대한 저작권은 Epid Games에 귀속됩니다.
+                                </p>
+                            </div>
                         </div>
-                        {/* Tooltip */}
-                        <div className="absolute top-full left-0 mt-2 w-64 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[100] scale-95 group-hover:scale-100 origin-top-left pointer-events-none">
-                            <p className="text-xs leading-relaxed text-slate-300">
-                                <b>가이드 안내</b><br />
-                                • 본 스토리 가이드는 공식 가이드가 아닙니다.<br />
-                                • 극장 개편에 따라 기존 출시 순서와 인게임 내 실제 접근 가능한 순서를 종합적으로 고려하여 정리된 순서로, 일부 어색한 부분이 있을 수 있습니다.<br />
-                                • 본 사이트는 문제가 발생할 경우 즉시 운영을 중단할 수 있으며, 모든 영상 및 이미지에 대한 저작권은 Epid Games에 귀속됩니다.
-                            </p>
-                        </div>
+
+                        <button
+                            onClick={onToggleView}
+                            className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 rounded-xl border border-slate-700/50 transition-all text-xs font-bold shrink-0"
+                        >
+                            <Smartphone size={18} />
+                            <span>Mobile View</span>
+                        </button>
+                    </div>
+
+                    <div className="flex md:hidden items-center gap-2">
+                        <select value={season} onChange={e => setSeason(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs font-bold outline-none font-mono">
+                            <option value={1}>S1</option>
+                            <option value={2}>S2</option>
+                            <option value={3}>S3</option>
+                        </select>
                     </div>
                 </div>
 
-                <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-3">
-                    <div className="flex items-center bg-slate-800/80 rounded-full px-4 border border-slate-700 transition-all backdrop-blur-sm group">
-                        <Search className="text-slate-400 group-focus-within:text-indigo-400" size={18} />
-                        <input type="text" placeholder="제목이나 주인공 검색..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="bg-transparent border-none py-2 px-3 outline-none w-80 text-sm" />
-                        {searchQuery && <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-white">✕</button>}
+                <div className="flex items-center gap-2 w-full md:w-auto md:absolute md:left-1/2 md:-translate-x-1/2">
+                    <div className="flex-1 md:flex-none flex items-center bg-slate-800/80 rounded-full px-4 border border-slate-700 transition-all backdrop-blur-sm group overflow-hidden">
+                        <Search className="text-slate-400 group-focus-within:text-indigo-400 shrink-0" size={18} />
+                        <input type="text" placeholder="제목/주인공 검색..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="bg-transparent border-none py-2 px-3 outline-none w-full md:w-64 lg:w-80 text-xs md:text-sm" />
+                        {searchQuery && <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-white mr-1">✕</button>}
                     </div>
                     {matchedNodeIds.length > 0 && (
-                        <div className="flex items-center bg-slate-800/80 rounded-full px-3 py-1 border border-slate-700 text-xs font-medium gap-2">
-                            <span>{currentSearchIndex + 1} / {matchedNodeIds.length}</span>
+                        <div className="flex items-center bg-slate-800/80 rounded-full px-3 py-1 border border-slate-700 text-[10px] md:text-xs font-medium gap-2 shrink-0">
+                            <span>{currentSearchIndex + 1}/{matchedNodeIds.length}</span>
                             <div className="flex gap-1 border-l border-slate-700 pl-2">
-                                <button onClick={() => navigateSearch('prev')}><ChevronLeft size={16} /></button>
-                                <button onClick={() => navigateSearch('next')}><ChevronRight size={16} /></button>
+                                <button onClick={() => navigateSearch('prev')}><ChevronLeft size={14} /></button>
+                                <button onClick={() => navigateSearch('next')}><ChevronRight size={14} /></button>
                             </div>
                         </div>
                     )}
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="hidden md:flex items-center gap-3">
                     <button
                         onClick={() => setShowMemo(true)}
                         className={`p-2.5 rounded-xl transition-all shadow-xl active:scale-95 border-2 ${memoText.trim()
-                            ? 'bg-indigo-600 border-white text-white shadow-[0_0_25px_rgba(99,102,241,1)] ring-4 ring-indigo-400/30'
-                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50'
+                            ? 'bg-indigo-600 border-white text-white shadow-[0_0_25px_rgba(99,102,241,1)]'
+                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-indigo-400'
                             }`}
                         title="메모장 열기"
                     >
-                        <StickyNote size={20} className={memoText.trim() ? 'drop-shadow-[0_0_12px_rgba(255,255,255,1)]' : ''} />
+                        <StickyNote size={20} />
                     </button>
-                    <select value={season} onChange={e => setSeason(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm font-bold">
+                    <select value={season} onChange={e => setSeason(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm font-bold outline-none">
                         <option value={1}>Season 1</option>
                         <option value={2}>Season 2</option>
                         <option value={3}>Season 3</option>
                     </select>
                 </div>
-            </header>
+
+                <div className="md:hidden fixed bottom-24 right-6 z-[60]">
+                    <button
+                        onClick={() => setShowMemo(true)}
+                        className={`p-4 rounded-full shadow-2xl active:scale-95 border-2 ${memoText.trim()
+                            ? 'bg-indigo-600 border-white text-white shadow-lg'
+                            : 'bg-slate-800 border-slate-700 text-slate-400 shadow-lg'
+                            }`}
+                    >
+                        <StickyNote size={24} />
+                    </button>
+                </div>
+            </header >
 
             <main className="flex-grow bg-transparent z-10 relative">
                 <ReactFlow
@@ -856,241 +888,249 @@ function StoryCanvasInner() {
                 </ReactFlow>
             </main>
 
-            {isPlayingVideoId && (
-                <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
-                    <div className="fixed top-8 right-8 z-[220] flex gap-4">
-                        <button onClick={() => setIsModalFullscreen(!isModalFullscreen)} className="bg-white/10 p-3 rounded-xl border border-white/20 text-white">
-                            {isModalFullscreen ? <Minimize2 size={24} /> : <Maximize2 size={24} />}
-                        </button>
-                        <button onClick={() => (setPlayingVideoId(null), setIsModalFullscreen(false))} className="bg-rose-600/80 p-3 rounded-xl border border-rose-400/30 text-white">
-                            <X size={24} />
-                        </button>
-                    </div>
-                    <div className={`relative bg-black shadow-2xl overflow-hidden transition-all duration-500 ${isModalFullscreen ? 'w-full h-full' : 'w-full max-w-5xl aspect-video rounded-3xl border border-white/10'}`}>
-                        <iframe src={`https://www.youtube.com/embed/${isPlayingVideoId}?autoplay=1&rel=0`} className="w-full h-full" allowFullScreen />
-                    </div>
-                    {!isModalFullscreen && <div className="absolute inset-0 -z-10" onClick={() => setPlayingVideoId(null)} />}
-                </div>
-            )}
-
-            {/* Admin Form Modal */}
-            {showForm && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                    <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
-                            <div className="flex items-center gap-2 text-indigo-400 font-bold">
-                                <Settings size={20} />
-                                <span>{editingNodeId ? '노드 데이터 수정' : '새 스토리 노드 추가'}</span>
-                            </div>
-                            <button onClick={() => setShowForm(false)} className="text-slate-500 hover:text-white transition-colors">
+            {
+                isPlayingVideoId && (
+                    <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
+                        <div className="fixed top-8 right-8 z-[220] flex gap-4">
+                            <button onClick={() => setIsModalFullscreen(!isModalFullscreen)} className="bg-white/10 p-3 rounded-xl border border-white/20 text-white">
+                                {isModalFullscreen ? <Minimize2 size={24} /> : <Maximize2 size={24} />}
+                            </button>
+                            <button onClick={() => (setPlayingVideoId(null), setIsModalFullscreen(false))} className="bg-rose-600/80 p-3 rounded-xl border border-rose-400/30 text-white">
                                 <X size={24} />
                             </button>
-                        </header>
+                        </div>
+                        <div className={`relative bg-black shadow-2xl overflow-hidden transition-all duration-500 ${isModalFullscreen ? 'w-full h-full' : 'w-full max-w-5xl aspect-video rounded-3xl border border-white/10'}`}>
+                            <iframe src={`https://www.youtube.com/embed/${isPlayingVideoId}?autoplay=1&rel=0`} className="w-full h-full" allowFullScreen />
+                        </div>
+                        {!isModalFullscreen && <div className="absolute inset-0 -z-10" onClick={() => setPlayingVideoId(null)} />}
+                    </div>
+                )
+            }
 
-                        <div className="p-6 flex flex-col gap-5 max-h-[80vh] overflow-y-auto custom-scrollbar text-slate-200">
-                            {/* Always visible: Type & Title */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">스토리 타입</label>
-                                    <select value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value as any })}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold">
-                                        <option value="main">메인스토리</option>
-                                        <option value="theme">테마극장</option>
-                                        <option value="etc">사복/기타</option>
-                                    </select>
+            {/* Admin Form Modal */}
+            {
+                showForm && (
+                    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                        <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                            <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
+                                <div className="flex items-center gap-2 text-indigo-400 font-bold">
+                                    <Settings size={20} />
+                                    <span>{editingNodeId ? '노드 데이터 수정' : '새 스토리 노드 추가'}</span>
                                 </div>
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">스토리 제목</label>
-                                    <input type="text" value={formData.label} onChange={e => setFormData({ ...formData, label: e.target.value })}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold"
-                                        placeholder="제목 입력" />
-                                </div>
-                            </div>
+                                <button onClick={() => setShowForm(false)} className="text-slate-500 hover:text-white transition-colors">
+                                    <X size={24} />
+                                </button>
+                            </header>
 
-                            {/* Always visible: Image Attachment Section */}
-                            <div className="flex flex-col gap-2 p-4 bg-slate-800/50 border border-slate-700 rounded-2xl">
-                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500">이미지 설정</label>
-                                <div className="flex items-center gap-4">
-                                    <div className="w-24 h-32 bg-slate-800 border-2 border-dashed border-slate-700 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 group relative shadow-inner">
-                                        {formData.image ? (
-                                            <img src={formData.image.startsWith('http') || formData.image.startsWith('data:') ? formData.image : `/images/${formData.image}`} className="w-full h-full object-cover" alt="Preview" />
-                                        ) : (
-                                            <ImageIcon className="text-slate-600" size={32} />
-                                        )}
-                                        {isUploading && (
-                                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                                <div className="w-6 h-6 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                                            </div>
-                                        )}
-                                        <button
-                                            onClick={() => fileInputRef.current?.click()}
-                                            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[11px] font-black text-white"
-                                        >
-                                            배경 변경
-                                        </button>
+                            <div className="p-6 flex flex-col gap-5 max-h-[80vh] overflow-y-auto custom-scrollbar text-slate-200">
+                                {/* Always visible: Type & Title */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">스토리 타입</label>
+                                        <select value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value as any })}
+                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold">
+                                            <option value="main">메인스토리</option>
+                                            <option value="theme">테마극장</option>
+                                            <option value="etc">사복/기타</option>
+                                        </select>
                                     </div>
-                                    <div className="flex-grow flex flex-col gap-3">
-                                        <input
-                                            type="file"
-                                            ref={fileInputRef}
-                                            onChange={handleImageUpload}
-                                            className="hidden"
-                                            accept="image/*"
-                                        />
-                                        <button
-                                            onClick={() => fileInputRef.current?.click()}
-                                            disabled={isUploading}
-                                            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 text-sm"
-                                        >
-                                            <ImageIcon size={18} /> {isUploading ? '업로드 중...' : '이미지 업로드'}
-                                        </button>
-                                        <div className="relative">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">스토리 제목</label>
+                                        <input type="text" value={formData.label} onChange={e => setFormData({ ...formData, label: e.target.value })}
+                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold"
+                                            placeholder="제목 입력" />
+                                    </div>
+                                </div>
+
+                                {/* Always visible: Image Attachment Section */}
+                                <div className="flex flex-col gap-2 p-4 bg-slate-800/50 border border-slate-700 rounded-2xl">
+                                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500">이미지 설정</label>
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-24 h-32 bg-slate-800 border-2 border-dashed border-slate-700 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 group relative shadow-inner">
+                                            {formData.image ? (
+                                                <img src={formData.image.startsWith('http') || formData.image.startsWith('data:') ? formData.image : `/images/${formData.image}`} className="w-full h-full object-cover" alt="Preview" />
+                                            ) : (
+                                                <ImageIcon className="text-slate-600" size={32} />
+                                            )}
+                                            {isUploading && (
+                                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                                    <div className="w-6 h-6 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                                </div>
+                                            )}
+                                            <button
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[11px] font-black text-white"
+                                            >
+                                                배경 변경
+                                            </button>
+                                        </div>
+                                        <div className="flex-grow flex flex-col gap-3">
                                             <input
-                                                type="text"
-                                                value={formData.image}
-                                                onChange={e => setFormData({ ...formData, image: e.target.value })}
-                                                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500/50 text-[10px] font-mono pr-12 text-slate-400"
-                                                placeholder="파일명 또는 데이터 URL"
+                                                type="file"
+                                                ref={fileInputRef}
+                                                onChange={handleImageUpload}
+                                                className="hidden"
+                                                accept="image/*"
                                             />
-                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-600 uppercase">Path</span>
+                                            <button
+                                                onClick={() => fileInputRef.current?.click()}
+                                                disabled={isUploading}
+                                                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 text-sm"
+                                            >
+                                                <ImageIcon size={18} /> {isUploading ? '업로드 중...' : '이미지 업로드'}
+                                            </button>
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    value={formData.image}
+                                                    onChange={e => setFormData({ ...formData, image: e.target.value })}
+                                                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500/50 text-[10px] font-mono pr-12 text-slate-400"
+                                                    placeholder="파일명 또는 데이터 URL"
+                                                />
+                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-600 uppercase">Path</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Always visible: Bottom info label (partLabel) */}
-                            <div className="flex flex-col gap-1.5">
-                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">하단 표시 정보 (회차, 부제 등)</label>
-                                <input type="text" value={formData.partLabel || ''} onChange={e => setFormData({ ...formData, partLabel: e.target.value })}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
-                                    placeholder="예: 제 1화, 시온의 장난 등" />
-                            </div>
-
+                                {/* Always visible: Bottom info label (partLabel) */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">하단 표시 정보 (회차, 부제 등)</label>
+                                    <input type="text" value={formData.partLabel || ''} onChange={e => setFormData({ ...formData, partLabel: e.target.value })}
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                                        placeholder="예: 제 1화, 시온의 장난 등" />
+                                </div>
 
 
-                            {/* Conditional Fields: MAIN */}
-                            {formData.type === 'main' && (
-                                <>
 
+                                {/* Conditional Fields: MAIN */}
+                                {formData.type === 'main' && (
+                                    <>
+
+                                        <div className="flex flex-col gap-1.5">
+                                            <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">분할 레이아웃 설정</label>
+                                            <select value={formData.splitType || 'none'} onChange={e => setFormData({ ...formData, splitType: e.target.value as any })}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all">
+                                                <option value="none">설정 없음 (전체 크기)</option>
+                                                <option value="part1">이미지 왼쪽만 표시 (Part 1)</option>
+                                                <option value="part2">이미지 오른쪽만 표시 (Part 2)</option>
+                                            </select>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Conditional Fields: THEME */}
+                                {formData.type === 'theme' && (
+                                    <>
+                                        <div className="flex flex-col gap-1.5">
+                                            <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">주요 등장인물</label>
+                                            <input type="text" value={formData.protagonist || ''} onChange={e => setFormData({ ...formData, protagonist: e.target.value })}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
+                                                placeholder="아멜리아, 네르 등" />
+                                        </div>
+                                        <div className="flex flex-col gap-1.5">
+                                            <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">유튜브(PV) 링크</label>
+                                            <input type="text" value={formData.youtubeUrl || ''} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-mono text-xs"
+                                                placeholder="https://youtu.be/..." />
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Conditional Fields: ETC */}
+                                {formData.type === 'etc' && (
                                     <div className="flex flex-col gap-1.5">
-                                        <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">분할 레이아웃 설정</label>
-                                        <select value={formData.splitType || 'none'} onChange={e => setFormData({ ...formData, splitType: e.target.value as any })}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all">
-                                            <option value="none">설정 없음 (전체 크기)</option>
-                                            <option value="part1">이미지 왼쪽만 표시 (Part 1)</option>
-                                            <option value="part2">이미지 오른쪽만 표시 (Part 2)</option>
-                                        </select>
-                                    </div>
-                                </>
-                            )}
-
-                            {/* Conditional Fields: THEME */}
-                            {formData.type === 'theme' && (
-                                <>
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">주요 등장인물</label>
-                                        <input type="text" value={formData.protagonist || ''} onChange={e => setFormData({ ...formData, protagonist: e.target.value })}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
-                                            placeholder="아멜리아, 네르 등" />
-                                    </div>
-                                    <div className="flex flex-col gap-1.5">
-                                        <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">유튜브(PV) 링크</label>
+                                        <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">유튜브 링크</label>
                                         <input type="text" value={formData.youtubeUrl || ''} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })}
                                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-mono text-xs"
                                             placeholder="https://youtu.be/..." />
                                     </div>
-                                </>
-                            )}
-
-                            {/* Conditional Fields: ETC */}
-                            {formData.type === 'etc' && (
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">유튜브 링크</label>
-                                    <input type="text" value={formData.youtubeUrl || ''} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-mono text-xs"
-                                        placeholder="https://youtu.be/..." />
-                                </div>
-                            )}
-
-                            {/* Action Buttons */}
-                            <div className="flex gap-3 mt-4">
-                                {editingNodeId && (
-                                    <button
-                                        onClick={() => {
-                                            if (confirm("이 노드를 삭제하시겠습니까?")) {
-                                                const up = nodes.filter(n => n.id !== editingNodeId);
-                                                setNodes(up);
-                                                saveLocal(up, edges);
-                                                setShowForm(false);
-                                                setEditingNodeId(null);
-                                            }
-                                        }}
-                                        className="bg-rose-600/20 hover:bg-rose-600 text-rose-500 hover:text-white border border-rose-500/30 font-bold py-3 px-6 rounded-2xl transition-all flex items-center gap-2"
-                                    >
-                                        <Trash2 size={18} /> 삭제
-                                    </button>
                                 )}
-                                <button onClick={handleSaveNode} className="flex-grow bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-2xl shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
-                                    {editingNodeId ? '수정 사항 저장' : '새 노드 생성'}
-                                </button>
+
+                                {/* Action Buttons */}
+                                <div className="flex gap-3 mt-4">
+                                    {editingNodeId && (
+                                        <button
+                                            onClick={() => {
+                                                if (confirm("이 노드를 삭제하시겠습니까?")) {
+                                                    const up = nodes.filter(n => n.id !== editingNodeId);
+                                                    setNodes(up);
+                                                    saveLocal(up, edges);
+                                                    setShowForm(false);
+                                                    setEditingNodeId(null);
+                                                }
+                                            }}
+                                            className="bg-rose-600/20 hover:bg-rose-600 text-rose-500 hover:text-white border border-rose-500/30 font-bold py-3 px-6 rounded-2xl transition-all flex items-center gap-2"
+                                        >
+                                            <Trash2 size={18} /> 삭제
+                                        </button>
+                                    )}
+                                    <button onClick={handleSaveNode} className="flex-grow bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-2xl shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
+                                        {editingNodeId ? '수정 사항 저장' : '새 노드 생성'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Memo Modal */}
-            {showMemo && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
-                    <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
-                            <div className="flex items-center gap-2 text-indigo-400">
-                                <StickyNote size={20} />
-                                <span className="font-bold">메모장</span>
-                            </div>
-                            <button onClick={() => setShowMemo(false)} className="text-slate-500 hover:text-white transition-colors">
-                                <X size={24} />
-                            </button>
-                        </header>
-                        <div className="p-6">
-                            <textarea
-                                value={memoText}
-                                onChange={(e) => setMemoText(e.target.value)}
-                                placeholder="필요한 메모를 작성하세요... (자동 저장됩니다)"
-                                className="w-full h-80 bg-slate-800/50 border border-slate-700 rounded-2xl p-4 text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all resize-none font-sans text-sm leading-relaxed"
-                            />
-                            <div className="mt-4 flex justify-end">
-                                <button
-                                    onClick={() => setShowMemo(false)}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg active:scale-95 text-sm"
-                                >
-                                    닫기
+            {
+                showMemo && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
+                        <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                            <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
+                                <div className="flex items-center gap-2 text-indigo-400">
+                                    <StickyNote size={20} />
+                                    <span className="font-bold">메모장</span>
+                                </div>
+                                <button onClick={() => setShowMemo(false)} className="text-slate-500 hover:text-white transition-colors">
+                                    <X size={24} />
                                 </button>
+                            </header>
+                            <div className="p-6">
+                                <textarea
+                                    value={memoText}
+                                    onChange={(e) => setMemoText(e.target.value)}
+                                    placeholder="필요한 메모를 작성하세요... (자동 저장됩니다)"
+                                    className="w-full h-80 bg-slate-800/50 border border-slate-700 rounded-2xl p-4 text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all resize-none font-sans text-sm leading-relaxed"
+                                />
+                                <div className="mt-4 flex justify-end">
+                                    <button
+                                        onClick={() => setShowMemo(false)}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg active:scale-95 text-sm"
+                                    >
+                                        닫기
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             <div className="fixed bottom-6 right-6 z-50 opacity-30 hover:opacity-100 transition-opacity">
                 <button onClick={toggleAdmin} className="p-2 rounded-xl bg-slate-800/50 text-slate-400 border border-slate-700 shadow-lg hover:bg-slate-700 transition-all"><Settings size={18} /></button>
             </div>
 
-            {isAdmin && (
-                <div className="fixed bottom-24 right-6 pt-2 z-[60]">
-                    <button onClick={() => (setEditingNodeId(null), setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1 }), setShowForm(true))} className="bg-green-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-green-700 flex items-center gap-2">
-                        <Plus size={20} /> 새 노드
-                    </button>
-                </div>
-            )}
-        </div>
+            {
+                isAdmin && (
+                    <div className="fixed bottom-24 right-6 pt-2 z-[60]">
+                        <button onClick={() => (setEditingNodeId(null), setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1 }), setShowForm(true))} className="bg-green-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-green-700 flex items-center gap-2">
+                            <Plus size={20} /> 새 노드
+                        </button>
+                    </div>
+                )
+            }
+        </div >
     );
 }
 
-export default function StoryCanvas() {
+export default function StoryCanvas(props: { onToggleView: () => void, isMobileView: boolean }) {
     return (
         <ReactFlowProvider>
-            <StoryCanvasInner />
+            <StoryCanvasInner {...props} />
         </ReactFlowProvider>
     );
 }
