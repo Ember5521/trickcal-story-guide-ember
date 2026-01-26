@@ -759,9 +759,20 @@ function StoryCanvasInner() {
         }));
     };
 
+    const isProd = process.env.NODE_ENV === 'production';
+    const basePath = isProd ? '/trickcal-story-guide-ember' : '';
+
     return (
         <div ref={containerRef} className="relative flex flex-col h-screen overflow-hidden bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500/30">
-            <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: 'url(/images/background.jpg)', backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.2 }} />
+            <div
+                className="absolute inset-0 pointer-events-none z-0"
+                style={{
+                    backgroundImage: `url(${basePath}/images/background.jpg)`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    opacity: 0.2
+                }}
+            />
 
             <header className="bg-slate-900/80 backdrop-blur-xl border-b border-slate-800 p-4 flex items-center justify-between z-50">
                 <div className="flex items-center gap-3">

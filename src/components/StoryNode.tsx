@@ -75,6 +75,9 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
     const showTitle = false; // Universal title hiding as requested
     const hasContent = (showTitle && data.label) || data.partLabel || data.youtubeUrl;
 
+    const isProd = process.env.NODE_ENV === 'production';
+    const basePath = isProd ? '/trickcal-story-guide-ember' : '';
+
     return (
         <div className={`
       relative transition-all duration-500 w-full h-full flex flex-col
@@ -105,7 +108,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             <div className={`relative bg-slate-900 overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
                 {data.image ? (
                     <img
-                        src={data.image.startsWith('http') || data.image.startsWith('data:') ? data.image : `/images/${data.image}`}
+                        src={data.image.startsWith('http') || data.image.startsWith('data:') ? data.image : `${basePath}/images/${data.image}`}
                         alt={data.label}
                         loading="lazy"
                         className={`w-full h-full block transition-opacity duration-500 ${data.type === 'etc' ? 'object-contain' : 'object-cover'}`}
