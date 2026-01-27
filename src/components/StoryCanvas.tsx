@@ -37,6 +37,7 @@ const nodeTypes = {
 
 const initialNodes: Node<StoryNodeData>[] = [];
 const initialEdges: Edge[] = [];
+const TABLE_NAME = process.env.NEXT_PUBLIC_STORY_TABLE_NAME || 'story_data';
 
 // Zoom Scale Constants (Internal 0.55 = Display 1.0 for slightly more zoomed-out view)
 const SCALE_OUTER = 0.55; // Increased from 0.5 to make view slightly larger at 100%
@@ -493,7 +494,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 if (se) setEdges(JSON.parse(se));
 
                 if (supabase) {
-                    const { data, error } = await supabase.from('story_data').select('*').eq('season', season).single();
+                    const { data, error } = await supabase.from(TABLE_NAME).select('*').eq('season', season).single();
                     if (data && !error) {
                         const cloudNodes = data.nodes.map((n: any) => ({ ...n, data: { ...n.data, isAdmin } }));
                         if (!isAdmin) {

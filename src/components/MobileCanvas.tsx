@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 const isProd = process.env.NODE_ENV === 'production';
 const repoName = 'trickcal-story-guide-ember';
 const basePath = isProd ? `/${repoName}` : '';
+const TABLE_NAME = process.env.NEXT_PUBLIC_STORY_TABLE_NAME || 'story_data';
 
 interface StoryNodeData {
     label: string;
@@ -68,7 +69,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             try {
                 if (supabase) {
                     const { data, error } = await supabase
-                        .from('story_data')
+                        .from(TABLE_NAME)
                         .select('*')
                         .eq('season', season)
                         .single();
@@ -144,7 +145,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         try {
             // 1. Fetch latest state from DB to avoid overwriting edges changed elsewhere (PC)
             const { data: latestData } = await supabase
-                .from('story_data')
+                .from(TABLE_NAME)
                 .select('edges')
                 .eq('season', season)
                 .single();
