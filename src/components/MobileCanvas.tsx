@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -24,18 +24,26 @@ interface StoryNodeData {
     watched?: boolean;
     m_x?: number; // Mobile specific X
     m_y?: number; // Mobile specific Y
+    story_id?: string;
 }
 
 interface Node {
     id: string;
     data: StoryNodeData;
     position: { x: number; y: number };
+    x?: number;
+    y?: number;
 }
 
 export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleView: () => void, isMobileView: boolean }) {
     const [nodes, setNodes] = useState<Node[]>([]);
     const [edges, setEdges] = useState<any[]>([]);
     const [season, setSeason] = useState(1);
+    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>('recommended');
+    const [showMasterLibrary, setShowMasterLibrary] = useState(false);
+    const [masterStories, setMasterStories] = useState<any[]>([]);
+    const [isFetchingMasters, setIsFetchingMasters] = useState(false);
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc'>('main');
     const [searchQuery, setSearchQuery] = useState('');
     const [showInfo, setShowInfo] = useState(false);
     const [showMemo, setShowMemo] = useState(false);
@@ -66,27 +74,80 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     useEffect(() => {
         const load = async () => {
             setIsLoading(true);
+            setNodes([]);
             try {
                 if (supabase) {
-                    const { data, error } = await supabase
-                        .from(TABLE_NAME)
+                    const { data: layout, error: lError } = await supabase
+                        .from('story_layouts')
                         .select('*')
+                        .eq('view_type', viewType)
                         .eq('season', season)
                         .single();
 
-                    if (data && !error) {
-                        const histStr = localStorage.getItem(`watched_history_s${season}`) || '{}';
-                        const hist = JSON.parse(histStr);
+                    if (layout && !lError) {
+                        const layoutNodes = layout.nodes as any[];
+                        const storyIds = layoutNodes.map(ln => ln.story_id);
 
-                        const processedNodes = data.nodes.map((n: any) => ({
-                            ...n,
-                            data: {
-                                ...n.data,
-                                watched: !!hist[n.id]
-                            }
-                        }));
-                        setNodes(processedNodes);
-                        setEdges(data.edges || []);
+                        const { data: masters, error: mError } = await supabase
+                            .from('master_stories')
+                            .select('*')
+                            .in('id', storyIds);
+
+                        if (masters && !mError) {
+                            const masterMap = new Map(masters.map(m => [m.id, m]));
+                            const histStr = localStorage.getItem(`watched_history_s${season}`) || '{}';
+                            const hist = JSON.parse(histStr);
+
+                            const processedNodes = layoutNodes.map(ln => {
+                                const master = masterMap.get(ln.story_id);
+                                const masterData = master || {};
+
+                                // Consistent defaults for migrated data
+                                const getMigratedDimensions = (type: string) => {
+                                    if (type === 'main') return { w: 260, h: 380 };
+                                    if (type === 'theme') return { w: 320, h: 200 };
+                                    return { w: 300, h: 200 };
+                                };
+
+                                const { w: defW, h: defH } = getMigratedDimensions(masterData.type || 'main');
+
+                                // Robust fallback: If width/height is missing OR too small (e.g. 0 from bad migration), use default
+                                // SPECIAL FIX: Season 2 Main nodes appearing as wide (Theme-like) -> Force to Portrait
+                                let finalW = (typeof ln.w === 'number' && ln.w > 50) ? ln.w : defW;
+                                let finalH = (typeof ln.h === 'number' && ln.h > 50) ? ln.h : defH;
+
+                                // Note: season var might not be available here directly if it's propped differently, 
+                                // but MobileCanvas props usually have season or we check masterData.story_id range or similar if strictly needed.
+                                // However, MobileCanvas usually renders one season at a time.
+                                // Checking context: MobileCanvas receives 'season' as prop? No, it has its own state. 
+                                // Let's check state 'season' usage in MobileCanvas. Assuming 'season' state variable exists in scope.
+                                if (season === 2 && (masterData.type === 'main' || !masterData.type)) {
+                                    if (finalW > finalH) {
+                                        finalW = 260;
+                                        finalH = 380;
+                                    }
+                                }
+
+                                return {
+                                    id: ln.id,
+                                    position: { x: ln.x || 0, y: ln.y || 0 },
+                                    width: finalW,
+                                    height: finalH,
+                                    style: { width: finalW, height: finalH },
+                                    data: {
+                                        ...masterData,
+                                        youtubeUrl: masterData.youtube_url,
+                                        partLabel: masterData.part_label,
+                                        story_id: ln.story_id,
+                                        m_x: ln.m_x,
+                                        m_y: ln.m_y,
+                                        watched: !!hist[ln.id]
+                                    }
+                                } as Node;
+                            });
+                            setNodes(processedNodes);
+                            setEdges(layout.edges || []);
+                        }
                     }
                 }
             } catch (err) {
@@ -96,7 +157,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             }
         };
         load();
-    }, [season]);
+    }, [season, viewType]);
 
     // Load Memo
     useEffect(() => {
@@ -141,29 +202,48 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
     // Save Data to Supabase (Preserving Edges via Read-before-write)
     const syncToCloud = async (newNodes: Node[]) => {
-        if (!supabase || !isAdmin || !sessionPassword.current) return;
+        if (!supabase || !isAdmin || !sessionPassword.current) {
+            console.error("Mobile Cloud sync: Pre-conditions failed", { hasSupabase: !!supabase, isAdmin, hasPassword: !!sessionPassword.current });
+            return false;
+        }
         try {
-            // 1. Fetch latest state from DB to avoid overwriting edges changed elsewhere (PC)
-            const { data: latestData } = await supabase
-                .from(TABLE_NAME)
-                .select('edges')
-                .eq('season', season)
-                .single();
+            // Convert to layout format
+            const layoutNodes = newNodes.map(n => ({
+                id: n.id,
+                story_id: (n.data as any).story_id || n.id,
+                x: n.position.x,
+                y: n.position.y,
+                w: (n as any).width,
+                h: (n as any).height,
+                m_x: n.data.m_x,
+                m_y: n.data.m_y
+            }));
 
-            const currentEdges = latestData?.edges || edges;
+            console.log(`Mobile Cloud sync starting for ${viewType} ${season}...`, { nodeCount: layoutNodes.length });
 
-            // 2. Sync with the merged data
-            await supabase.rpc('save_story_data', {
+            const { data, error } = await supabase.rpc('save_story_layout', {
+                p_view_type: viewType,
                 p_season: season,
-                p_nodes: newNodes,
-                p_edges: currentEdges,
+                p_nodes: layoutNodes,
+                p_edges: edges,
                 p_password: sessionPassword.current
             });
 
-            // 3. Update local state to match cloud
-            setEdges(currentEdges);
+            if (error) {
+                console.error("Mobile Cloud sync RPC error:", error);
+                return false;
+            }
+
+            if (data === false) {
+                console.error("Mobile Cloud sync failed: RPC returned false (Password mismatch?)");
+                return false;
+            }
+
+            console.log("Mobile Cloud sync successful!");
+            return true;
         } catch (err) {
-            console.error("Cloud sync error:", err);
+            console.error("Mobile Cloud sync exception:", err);
+            return false;
         }
     };
 
@@ -257,8 +337,48 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         ));
     };
 
+    const fetchMasterStories = async () => {
+        if (!supabase) return;
+        setIsFetchingMasters(true);
+        try {
+            const { data, error } = await supabase
+                .from('master_stories')
+                .select('*')
+                .order('label', { ascending: true });
+            if (error) throw error;
+            setMasterStories(data || []);
+        } catch (err) {
+            console.error("Fetch master stories error:", err);
+        } finally {
+            setIsFetchingMasters(false);
+        }
+    };
+
+    const handleImportMaster = (m: any) => {
+        const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.position.y)) : 0;
+        const newNode: Node = {
+            id: `n_${Date.now()}`,
+            position: { x: 0, y: maxY + SLOT_UNIT },
+            data: {
+                label: m.label,
+                type: m.type,
+                image: m.image,
+                youtubeUrl: m.youtube_url,
+                protagonist: m.protagonist,
+                importance: m.importance,
+                story_id: m.id,
+                watched: false
+            }
+        };
+        setNodes(nds => [...nds, newNode]);
+        setShowMasterLibrary(false);
+    };
+
     const toggleAdmin = async () => {
         if (isAdmin) {
+            const ok = await syncToCloud(nodes);
+            if (ok) alert("저장되었습니다.");
+            else if (!confirm("저장 실패. 무시하고 나갈까요?")) return;
             setIsAdmin(false);
             sessionPassword.current = null;
         } else {
@@ -391,28 +511,45 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             <header className="relative z-50 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800/50 p-3 pt-4 shrink-0 shadow-2xl">
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                        <button onClick={() => setShowInfo(!showInfo)} className="p-1.5 bg-slate-800/50 rounded-lg text-slate-400 border border-slate-700/30">
-                            <Info size={16} />
+                        <button onClick={() => setShowInfo(!showInfo)} className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95">
+                            <Info size={18} />
                         </button>
-                        <button onClick={onToggleView} className="p-1.5 bg-slate-800/50 rounded-lg text-slate-400 border border-slate-700/30 flex items-center gap-2">
-                            <Monitor size={16} />
-                            <span className="text-[10px] font-bold uppercase">PC View</span>
+                        <button onClick={onToggleView} className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95" title="PC View">
+                            <Monitor size={18} />
                         </button>
                     </div>
                     <div className="flex items-center gap-2">
                         {isAdmin && (
-                            <button onClick={() => {
-                                const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.position.y)) : 0;
-                                setEditingNode(null);
-                                setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: 0, y: maxY + SLOT_UNIT });
-                                setShowForm(true);
-                            }} className="p-1.5 bg-indigo-600 rounded-lg text-white border border-indigo-500">
-                                <Plus size={16} />
+                            <>
+                                <button
+                                    onClick={() => {
+                                        fetchMasterStories();
+                                        setShowMasterLibrary(true);
+                                    }}
+                                    className="p-1.5 bg-indigo-600 rounded-lg text-white border border-indigo-500"
+                                    title="마스터 불러오기"
+                                >
+                                    <Library size={16} />
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.position.y)) : 0;
+                                        setEditingNode(null);
+                                        setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: 0, y: maxY + SLOT_UNIT });
+                                        setShowForm(true);
+                                    }}
+                                    className="p-1.5 bg-green-600 rounded-lg text-white border border-green-500"
+                                    title="새 마스터 생성"
+                                >
+                                    <Plus size={16} />
+                                </button>
+                            </>
+                        )}
+                        {process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+                            <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-transparent border-none text-slate-800 opacity-[0.15] hover:opacity-50'}`}>
+                                <Shield size={16} />
                             </button>
                         )}
-                        <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-transparent border-none text-slate-800 opacity-[0.15] hover:opacity-50'}`}>
-                            <Shield size={16} />
-                        </button>
                     </div>
                 </div>
 
@@ -449,14 +586,33 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             </div>
                         </div>
                     )}
-                    <button onClick={() => setShowMemo(true)} className={`p-2 bg-slate-800/50 rounded-lg border border-slate-700/30 ${memoText.trim() ? 'text-indigo-400' : 'text-slate-500'}`}><StickyNote size={16} /></button>
-                    <div className="relative">
-                        <select value={season} onChange={(e) => setSeason(Number(e.target.value))} className="appearance-none bg-slate-800/70 border border-slate-700/30 text-[10px] font-black text-white px-3 py-2 pr-7 rounded-lg outline-none">
-                            <option value={1}>SEASON 1</option>
-                            <option value={2}>SEASON 2</option>
-                            <option value={3}>SEASON 3</option>
+                    <button
+                        onClick={() => setShowMemo(true)}
+                        className={`p-2 rounded-xl border transition-all active:scale-95 ${memoText.trim()
+                            ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20'
+                            : 'bg-slate-800/80 border-slate-700 text-slate-400'
+                            }`}
+                    >
+                        <StickyNote size={18} />
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <select
+                            value={viewType}
+                            onChange={(e) => setViewType(e.target.value as any)}
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-100 outline-none cursor-pointer transition-all active:bg-slate-700"
+                        >
+                            <option value="recommended" className="bg-slate-900">추천 순서</option>
+                            <option value="release" className="bg-slate-900">출시 순서</option>
                         </select>
-                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                        <select
+                            value={season}
+                            onChange={e => setSeason(Number(e.target.value))}
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold outline-none text-slate-100 transition-all active:bg-slate-700"
+                        >
+                            <option value={1}>S1</option>
+                            <option value={2}>S2</option>
+                            <option value={3}>S3</option>
+                        </select>
                     </div>
                 </div>
             </header>
@@ -564,13 +720,14 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
                                                     {isAdmin && (
                                                         <button
+                                                            onPointerDown={(e) => e.stopPropagation()}
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 setEditingNode(node);
                                                                 setFormData({ ...node.data, x: node.position.x, y: node.position.y });
                                                                 setShowForm(true);
                                                             }}
-                                                            className="p-1.5 text-blue-400/80 hover:text-blue-400 bg-slate-800/50 rounded pointer-events-auto"
+                                                            className="p-1.5 text-blue-400/80 hover:text-blue-400 bg-slate-800/50 rounded pointer-events-auto active:scale-125 transition-transform"
                                                         >
                                                             <Edit2 size={12} />
                                                         </button>
@@ -660,22 +817,87 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">YouTube link</label>
                                 <input type="text" value={formData.youtubeUrl} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-xs font-mono outline-none" placeholder="https://youtube.com/..." />
                             </div>
+
+                            <div>
+                                <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">하단 표시 정보 (회차, 부제 등)</label>
+                                <input type="text" value={formData.partLabel || ''} onChange={e => setFormData({ ...formData, partLabel: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="예: 제 1화" />
+                            </div>
                         </div>
-                        <div className="p-4 bg-slate-950/80 border-t border-slate-800 rounded-b-2xl">
+                        <div className="p-4 bg-slate-950/80 border-t border-slate-800 rounded-b-2xl flex gap-3">
+                            {editingNode && (
+                                <button
+                                    onClick={() => {
+                                        if (confirm("이 노드를 삭제하시겠습니까? (이 배치에서만 사라지고 마스터 데이터는 유지됩니다)")) {
+                                            const up = nodes.filter(n => n.id !== editingNode.id);
+                                            setNodes(up);
+                                            syncToCloud(up);
+                                            setShowForm(false);
+                                            setEditingNode(null);
+                                        }
+                                    }}
+                                    className="px-4 py-3.5 bg-rose-600/20 hover:bg-rose-600 text-rose-500 hover:text-white border border-rose-500/30 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            )}
                             <button onClick={async () => {
                                 if (!formData.label) { alert("제목!"); return; }
-                                let newNodes: Node[];
-                                if (editingNode) {
-                                    newNodes = nodes.map(n => n.id === editingNode.id ? { ...n, position: { x: formData.x, y: formData.y }, data: { ...n.data, ...formData } } : n);
-                                } else {
-                                    const newNode: Node = { id: `n_${Date.now()}`, position: { x: formData.x, y: formData.y }, data: { ...formData, watched: false } };
-                                    newNodes = [...nodes, newNode];
+                                if (!supabase || !sessionPassword.current) return;
+
+                                try {
+                                    let storyId = (formData as any).story_id;
+
+                                    if (editingNode && storyId) {
+                                        // Update existing master story
+                                        await supabase.rpc('update_master_story', {
+                                            p_id: storyId,
+                                            p_label: formData.label,
+                                            p_type: formData.type,
+                                            p_image: formData.image,
+                                            p_youtube_url: formData.youtubeUrl || '',
+                                            p_protagonist: formData.protagonist || '',
+                                            p_part_label: formData.partLabel || '',
+                                            p_importance: formData.importance || 1,
+                                            p_password: sessionPassword.current
+                                        });
+                                    } else {
+                                        // Create new master story
+                                        const { data: newId, error } = await supabase.rpc('create_master_story', {
+                                            p_label: formData.label,
+                                            p_type: formData.type,
+                                            p_image: formData.image,
+                                            p_youtube_url: formData.youtubeUrl || '',
+                                            p_protagonist: formData.protagonist || '',
+                                            p_part_label: formData.partLabel || '',
+                                            p_importance: formData.importance || 1,
+                                            p_password: sessionPassword.current
+                                        });
+                                        if (error || !newId) throw new Error("Master story creation failed");
+                                        storyId = newId;
+                                    }
+
+                                    let newNodes: Node[];
+                                    if (editingNode) {
+                                        newNodes = nodes.map(n => n.id === editingNode.id ? { ...n, position: { x: formData.x, y: formData.y }, data: { ...n.data, ...formData, story_id: storyId } } : n);
+                                    } else {
+                                        const newNode: Node = {
+                                            id: `n_${Date.now()}`,
+                                            position: { x: formData.x, y: formData.y },
+                                            data: { ...formData, story_id: storyId, watched: false }
+                                        };
+                                        newNodes = [...nodes, newNode];
+                                    }
+                                    setNodes(newNodes);
+                                    const ok = await syncToCloud(newNodes);
+                                    if (ok) alert("저장되었습니다.");
+                                    else alert("클라우드 저장 실패! (로컬에는 저장됨)");
+                                    setShowForm(false);
+                                    setEditingNode(null);
+                                } catch (err) {
+                                    console.error("Save error:", err);
+                                    alert("저장 중 오류가 발생했습니다.");
                                 }
-                                setNodes(newNodes);
-                                await syncToCloud(newNodes);
-                                setShowForm(false);
-                                setEditingNode(null);
-                            }} className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
+                            }} className="flex-grow py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all active:scale-[0.98]">
                                 <Save size={16} /> SAVE NODE
                             </button>
                         </div>
@@ -761,6 +983,83 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         setSelectedDetailNode(null);
                         window.history.back();
                     }} />
+                </div>
+            )}
+
+            {/* Master Story Library Modal */}
+            {showMasterLibrary && (
+                <div className="fixed inset-0 bg-black/95 backdrop-blur-2xl z-[600] flex flex-col p-4 animate-in slide-in-from-bottom-5">
+                    <header className="flex flex-col gap-4 p-4 bg-slate-900 border-b border-slate-800 rounded-t-3xl">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
+                                    <Library size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-100 italic tracking-tight">MASTER LIBRARY</h3>
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Select story to import</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowMasterLibrary(false)} className="text-slate-500 hover:text-white transition-colors">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
+                            {(['main', 'theme', 'etc'] as const).map((cat) => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setLibraryCategory(cat)}
+                                    className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all ${libraryCategory === cat
+                                        ? 'bg-indigo-600 text-white shadow-lg'
+                                        : 'text-slate-500 hover:text-slate-300'
+                                        }`}
+                                >
+                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : 'ETC'}
+                                </button>
+                            ))}
+                        </div>
+                    </header>
+
+                    <div className="flex-grow overflow-y-auto p-4 custom-scrollbar bg-slate-950/20">
+                        {isFetchingMasters ? (
+                            <div className="h-full flex flex-col items-center justify-center gap-4 text-slate-500">
+                                <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                <p className="text-xs font-bold animate-pulse uppercase tracking-widest">Loading Library...</p>
+                            </div>
+                        ) : masterStories.filter(m => m.type === libraryCategory).length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-500">
+                                <Library size={40} className="opacity-20" />
+                                <p className="text-sm font-bold opacity-40">이 카테고리에 마스터 노드가 없습니다.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-5 gap-1.5">
+                                {masterStories.filter(m => m.type === libraryCategory).map((m) => (
+                                    <button
+                                        key={m.id}
+                                        onClick={() => handleImportMaster(m)}
+                                        className="group relative aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden border border-slate-700 active:scale-95 transition-all shadow-lg"
+                                    >
+                                        {m.image ? (
+                                            <img src={m.image} className="w-full h-full object-cover" alt={m.label} loading="lazy" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-slate-700/30">
+                                                <ImageIcon size={32} className="text-slate-600" />
+                                            </div>
+                                        )}
+                                        <div className="absolute inset-x-0 bottom-0 p-1 bg-gradient-to-t from-black/95 via-black/70 to-transparent">
+                                            <p className="text-[7px] font-bold text-white truncate">{m.label}</p>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <footer className="p-4 bg-slate-900 border-t border-slate-800 flex justify-end">
+                        <button onClick={() => setShowMasterLibrary(false)} className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-black rounded-xl transition-all text-[10px] uppercase tracking-widest border border-slate-700">
+                            Close Library
+                        </button>
+                    </footer>
                 </div>
             )}
 

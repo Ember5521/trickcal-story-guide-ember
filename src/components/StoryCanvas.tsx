@@ -5,7 +5,7 @@ import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
     X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone,
-    Image as ImageIcon, Shield
+    Image as ImageIcon, Shield, Library
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import ReactFlow, {
@@ -57,6 +57,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [edges, setEdges] = useState<Edge[]>(initialEdges);
     const [isAdmin, setIsAdmin] = useState(false);
     const [season, setSeason] = useState(1);
+    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>('recommended');
     const [isLoaded, setIsLoaded] = useState(false);
 
     // UI State
@@ -72,6 +73,17 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     // Memo State
     const [showMemo, setShowMemo] = useState(false);
     const [memoText, setMemoText] = useState('');
+
+    // Image Browser State
+    const [showGallery, setShowGallery] = useState(false);
+    const [storageImages, setStorageImages] = useState<any[]>([]);
+    const [isLoadingGallery, setIsLoadingGallery] = useState(false);
+    const [galleryFolder, setGalleryFolder] = useState<string>('all');
+    const [showMasterLibrary, setShowMasterLibrary] = useState(false);
+    const [masterStories, setMasterStories] = useState<any[]>([]);
+    const [isFetchingMasters, setIsFetchingMasters] = useState(false);
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc'>('main');
+    const [masterSearchQuery, setMasterSearchQuery] = useState('');
 
     const containerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +101,23 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         const match = url.match(regExp);
         return match ? match[1] : null;
     };
+
+    useEffect(() => {
+        const checkDB = async () => {
+            if (!supabase) return;
+            const { data, error } = await supabase.from('story_layouts').select('count');
+            console.log("DEBUG: story_layouts count:", data, "error:", error);
+            const { data: masters } = await supabase.from('master_stories').select('count');
+            console.log("DEBUG: master_stories count:", masters);
+        };
+        checkDB();
+    }, []);
+
+    // Unified Play Video Handler
+    const handlePlayVideo = useCallback((url: string) => {
+        const id = getYouTubeId(url);
+        if (id) setPlayingVideoId(id);
+    }, []);
 
     // Filtered Nodes
     const displayNodes = useMemo(() => {
@@ -109,102 +138,30 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     ...node.data,
                     isAdmin,
                     highlighted: isMatched && !isHidden,
-                    onPlayVideo: (url: string) => {
-                        const id = getYouTubeId(url);
-                        if (id) setPlayingVideoId(id);
-                    }
+                    onPlayVideo: handlePlayVideo
                 }
             };
         });
-    }, [nodes, searchQuery, isAdmin]);
+    }, [nodes, searchQuery, isAdmin, handlePlayVideo]);
 
     const matchedNodeIds = useMemo(() => {
         return displayNodes.filter(node => node.data.highlighted).map(node => node.id);
     }, [displayNodes]);
 
+    // Master Library Search Filtering
+    const filteredMasterStories = useMemo(() => {
+        const query = masterSearchQuery.toLowerCase().trim();
+        const categoryFiltered = masterStories.filter(m => m.type === libraryCategory);
+        if (!query) return categoryFiltered;
+        return categoryFiltered.filter(m =>
+            m.label?.toLowerCase().includes(query) ||
+            m.protagonist?.toLowerCase().includes(query)
+        );
+    }, [masterStories, libraryCategory, masterSearchQuery]);
+
     // BFS for Virtual Edges
-    const findNextVisible = useCallback((nodeId: string, visibleNodeIds: Set<string>) => {
-        const nextVisible: string[] = [];
-        const queue = [...edges.filter(e => e.source === nodeId).map(e => e.target)];
-        const seenInBranch = new Set<string>();
-
-        while (queue.length > 0) {
-            const current = queue.shift()!;
-            if (seenInBranch.has(current)) continue;
-            seenInBranch.add(current);
-
-            if (visibleNodeIds.has(current)) {
-                nextVisible.push(current);
-            } else {
-                queue.push(...edges.filter(e => e.source === current).map(e => e.target));
-            }
-        }
-        return Array.from(new Set(nextVisible));
-    }, [edges]);
-
-    const displayEdges = useMemo(() => {
-        const visibleNodeIds = new Set(displayNodes.filter(n => !n.hidden).map(n => n.id));
-        const virtualEdges: Edge[] = [];
-        const edgeColor = '#cbd5e1';
-
-        const sideUsage = new Map<string, Set<string>>();
-        const markUsed = (nodeId: string, side?: string | null) => {
-            if (!side) return;
-            if (!sideUsage.has(nodeId)) sideUsage.set(nodeId, new Set());
-            sideUsage.get(nodeId)!.add(side);
-        };
-
-        edges.forEach(edge => {
-            if (visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)) {
-                markUsed(edge.source, edge.sourceHandle);
-                markUsed(edge.target, edge.targetHandle);
-            }
-        });
-
-        const getSmartHandle = (nodeId: string, preferred?: string) => {
-            if (preferred) return preferred;
-            const sides = ['top', 'bottom', 'left', 'right'] as const;
-            if (!sideUsage.has(nodeId)) sideUsage.set(nodeId, new Set());
-            const used = sideUsage.get(nodeId)!;
-            for (const side of sides) {
-                if (!used.has(side)) {
-                    used.add(side);
-                    return side;
-                }
-            }
-            return 'top';
-        };
-
-        const processEdge = (s: string, t: string, orig: Edge, isV: boolean) => ({
-            ...orig,
-            id: isV ? `v_${s}_${t}` : orig.id,
-            source: s,
-            target: t,
-            type: isV ? 'step' : (orig.type || 'step'),
-            animated: true,
-            markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor, width: 10, height: 10 },
-            style: { strokeWidth: 6, stroke: edgeColor },
-            sourceHandle: isV ? getSmartHandle(s) : (orig.sourceHandle || 'bottom'),
-            targetHandle: isV ? getSmartHandle(t) : (orig.targetHandle || 'top'),
-        });
-
-        edges.forEach(edge => {
-            if (!visibleNodeIds.has(edge.source)) return;
-            if (visibleNodeIds.has(edge.target)) {
-                virtualEdges.push(processEdge(edge.source, edge.target, edge, false));
-            } else {
-                const targets = findNextVisible(edge.target, visibleNodeIds);
-                targets.forEach(t => virtualEdges.push(processEdge(edge.source, t, edge, true)));
-            }
-        });
-
-        const uniqueMap = new Map();
-        virtualEdges.forEach(e => {
-            const key = `${e.source}_${e.sourceHandle}_${e.target}_${e.targetHandle}`;
-            if (!uniqueMap.has(key)) uniqueMap.set(key, e);
-        });
-        return Array.from(uniqueMap.values());
-    }, [edges, displayNodes, findNextVisible]);
+    // Virtual Edge Logic Removed per user request
+    const displayEdges = edges;
 
     // Canvas Bounds (Requirement: Restrict movement based on nodes)
     const translateExtent = useMemo(() => {
@@ -381,22 +338,56 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
     const syncToCloud = async (n: Node<StoryNodeData>[], e: Edge[]) => {
         if (!supabase || !isAdmin) return false;
-
-        // Use the prompt to get password if somehow not stored, but here we can assume 
-        // they are in admin mode. In a real app, you might store the session password in a ref.
-        // For now, we'll need the password used for login. 
-        // Let's add a state to keep track of the session password.
-        if (!sessionPassword.current) return false;
+        if (!sessionPassword.current) {
+            console.error("Cloud sync: No session password found");
+            return false;
+        }
 
         try {
-            const { error } = await supabase.rpc('save_story_data', {
+            // Convert React Flow nodes to layout storage format (only id, story_id, position, and mobile coords)
+            const layoutNodes = n.map(node => ({
+                id: node.id,
+                story_id: (node.data as any).story_id || (node.data as any).id, // Fallback for migration period
+                x: node.position.x,
+                y: node.position.y,
+                w: node.width,
+                h: node.height,
+                m_x: node.data.m_x,
+                m_y: node.data.m_y,
+                splitType: node.data.splitType // Save splitType
+            }));
+
+            console.log(`Cloud sync starting for ${viewType} ${season}...`, { nodeCount: layoutNodes.length, edgeCount: e.length });
+
+            const { data, error } = await supabase.rpc('save_story_layout', {
+                p_view_type: viewType,
                 p_season: season,
-                p_nodes: n,
+                p_nodes: layoutNodes,
                 p_edges: e,
                 p_password: sessionPassword.current
             });
-            return !error;
-        } catch { return false; }
+
+            if (error) {
+                console.error("Cloud sync RPC error detected!", {
+                    code: error.code,
+                    message: error.message,
+                    details: error.details,
+                    hint: error.hint
+                });
+                return false;
+            }
+
+            if (data === false) {
+                console.error("Cloud sync failed: RPC returned false (Password mismatch?)");
+                return false;
+            }
+
+            console.log("Cloud sync successful!");
+            return true;
+        } catch (err) {
+            console.error("Cloud sync exception:", err);
+            return false;
+        }
     };
 
     // Wheel Handler
@@ -479,54 +470,134 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
 
 
-    // Load Data Effect
     useEffect(() => {
         const load = async () => {
-            // Clear current data immediately when switching seasons to avoid mixed view
             setNodes([]);
             setEdges([]);
             setIsLoaded(false);
 
             try {
-                const sn = localStorage.getItem(`stories_s${season}`);
-                const se = localStorage.getItem(`edges_s${season}`);
-                if (sn) setNodes(JSON.parse(sn).map((n: any) => ({ ...n, data: { ...n.data, isAdmin } })));
-                if (se) setEdges(JSON.parse(se));
-
+                // For normalized schema, we fetch layout first, then masters
                 if (supabase) {
-                    const { data, error } = await supabase.from(TABLE_NAME).select('*').eq('season', season).single();
-                    if (data && !error) {
-                        const cloudNodes = data.nodes.map((n: any) => ({ ...n, data: { ...n.data, isAdmin } }));
-                        if (!isAdmin) {
+                    const { data: layout, error: lError } = await supabase
+                        .from('story_layouts')
+                        .select('*')
+                        .eq('view_type', viewType)
+                        .eq('season', season)
+                        .maybeSingle();
+
+                    if (layout && !lError) {
+                        const layoutNodes = layout.nodes as any[];
+                        const storyIds = layoutNodes.map(ln => ln.story_id);
+
+                        const { data: masters, error: mError } = await supabase
+                            .from('master_stories')
+                            .select('*')
+                            .in('id', storyIds);
+
+                        if (masters && !mError) {
+                            const masterMap = new Map(masters.map(m => [m.id, m]));
                             const histStr = localStorage.getItem(`watched_history_s${season}`) || '{}';
                             const hist = JSON.parse(histStr);
-                            setNodes(cloudNodes.map((n: any) => ({ ...n, data: { ...n.data, watched: !!hist[n.id] } })));
-                        } else {
-                            setNodes(cloudNodes);
+
+                            let missingMasterCount = 0;
+                            let emptyImageCount = 0;
+
+                            const finalNodes = layoutNodes.map(ln => {
+                                const master = masterMap.get(ln.story_id);
+                                if (!master) {
+                                    missingMasterCount++;
+                                }
+                                const masterData = master || {};
+                                if (master && !master.image) {
+                                    emptyImageCount++;
+                                }
+
+                                // Consistent defaults for migrated data
+                                const getMigratedDimensions = (type: string) => {
+                                    if (type === 'main') return { w: 260, h: 380 };
+                                    if (type === 'theme') return { w: 320, h: 200 };
+                                    return { w: 300, h: 200 };
+                                };
+
+                                const { w: defW, h: defH } = getMigratedDimensions(masterData.type || 'main');
+
+                                const posX = typeof ln.x === 'number' ? ln.x : 0;
+                                const posY = typeof ln.y === 'number' ? ln.y : 0;
+                                // Robust fallback: If width/height is missing OR too small (e.g. 0 from bad migration), use default
+                                const finalW = (typeof ln.w === 'number' && ln.w > 50) ? ln.w : defW;
+                                const finalH = (typeof ln.h === 'number' && ln.h > 50) ? ln.h : defH;
+
+                                return {
+                                    id: ln.id,
+                                    type: 'storyNode',
+                                    position: { x: posX, y: posY },
+                                    width: finalW,
+                                    height: finalH,
+                                    style: { width: finalW, height: finalH },
+                                    data: {
+                                        ...masterData,
+                                        youtubeUrl: masterData.youtube_url,
+                                        partLabel: masterData.part_label,
+                                        story_id: ln.story_id,
+                                        m_x: ln.m_x,
+                                        m_y: ln.m_y,
+                                        splitType: ln.splitType || masterData.split_type || 'none', // Load splitType with fallback
+                                        watched: !!hist[ln.id],
+                                        isAdmin
+                                    }
+                                } as Node<StoryNodeData>;
+                            });
+
+                            console.log(`[Season ${season}] Load complete. Total Nodes: ${finalNodes.length}, Missing Master: ${missingMasterCount}, Empty Image: ${emptyImageCount}`);
+
+                            if (season === 2) {
+                                console.log("[Season 2] Image Path Samples:", finalNodes.slice(0, 10).map(n => ({ label: n.data.label, image: n.data.image })));
+                                const target = finalNodes.find(n => n.data.label?.includes('뱀') || n.data.label?.includes('Snake'));
+                                if (target) {
+                                    console.log("[Season 2] Problem Node POS:", {
+                                        label: target.data.label,
+                                        x: target.position.x,
+                                        y: target.position.y,
+                                        w: target.width,
+                                        h: target.height,
+                                        type: target.data.type,
+                                        style: target.style
+                                    });
+                                }
+
+                                // Check for Main nodes with wrong dimensions (wide instead of tall)
+                                const badMainNodes = finalNodes.filter(n => n.data.type === 'main' && n.width && n.width > 280);
+                                if (badMainNodes.length > 0) {
+                                    console.log("[Season 2] Sizing Mismatch Detected:", badMainNodes.map(n => ({ label: n.data.label, w: n.width, h: n.height })));
+                                }
+                            }
+
+                            if (missingMasterCount > 0 || emptyImageCount > 0) {
+                                const samples = finalNodes.filter(n => !n.data.label || !n.data.image).slice(0, 5);
+                                console.log(`[Season ${season}] Samples of problematic nodes:`, samples.map(s => ({ id: s.id, story_id: s.data.story_id, label: s.data.label })));
+                            }
+
+                            setNodes(finalNodes);
+                            setEdges(layout.edges);
                         }
-                        setEdges(data.edges);
-                        try {
-                            localStorage.setItem(`stories_s${season}`, JSON.stringify(data.nodes));
-                            localStorage.setItem(`edges_s${season}`, JSON.stringify(data.edges));
-                        } catch (e) {
-                            console.warn("Failed to update local cache due to quota limit.", e);
-                        }
+                    } else {
+                        // Fallback to old table for backward compatibility during migration if needed
+                        // Or just show empty if fully migrated
+                        console.warn("Layout not found for", viewType, season);
                     }
                 }
             } catch (err) {
                 console.error("Data load error:", err);
-                setNodes([]);
-                setEdges([]);
             } finally {
                 setIsLoaded(true);
             }
         };
         load();
 
-        // Load Memo (Requirement: Persist user notes)
         const savedMemo = localStorage.getItem('user_story_memo');
         if (savedMemo) setMemoText(savedMemo);
-    }, [season, isAdmin]);
+    }, [season, viewType, isAdmin]);
 
     // Save Memo automatically whenever it changes
     useEffect(() => {
@@ -537,9 +608,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         }
     }, [memoText]);
 
-    // Admin Cloud Sync (Debounced with isLoaded Guard)
     useEffect(() => {
         if (!isAdmin || !isLoaded) return;
+        // Don't auto-save empty layouts right after loading a missing layout
+        if (nodes.length === 0 && edges.length === 0) return;
+
         const timer = setTimeout(() => {
             syncToCloud(nodes, edges);
         }, 2000); // Sync after 2 seconds of inactivity
@@ -595,8 +668,40 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const onNodesChange = useCallback((c: NodeChange[]) => {
         setNodes(nds => {
             const up = applyNodeChanges(c, nds) as Node<StoryNodeData>[];
-            if (isAdmin) saveLocal(up, edges);
-            return up;
+
+            // Synchronize width/height to style for persistent rendering
+            // We must intentionally inspect the changes to capture resize events
+            const synchronized = up.map(n => {
+                const change = c.find(ch => (ch as any).id === n.id);
+                if (change && change.type === 'dimensions' && change.dimensions) {
+                    // console.log(`[Resize] Node ${n.id} resized to ${change.dimensions.width}x${change.dimensions.height}`);
+                    return {
+                        ...n,
+                        width: change.dimensions.width,
+                        height: change.dimensions.height,
+                        style: {
+                            ...n.style,
+                            width: change.dimensions.width,
+                            height: change.dimensions.height
+                        }
+                    } as Node<StoryNodeData>;
+                }
+                // Fallback: If style exists but width/height are out of sync (e.g. from drag), sync them if needed relative to style? 
+                // Usually ReactFlow handles drag (position), but resize is explicit.
+                // Just ensure we keep the style width/height if it exists
+                if (n.style?.width && n.style?.height) {
+                    return {
+                        ...n,
+                        width: Number(n.style.width),
+                        height: Number(n.style.height)
+                    };
+                }
+                return n;
+            });
+
+            // Trigger local save (checks)
+            if (isAdmin) saveLocal(synchronized, edges);
+            return synchronized;
         });
     }, [edges, isAdmin, saveLocal]);
 
@@ -605,6 +710,17 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             const up = applyEdgeChanges(c, eds);
             if (isAdmin) saveLocal(nodes, up);
             return up;
+        });
+    }, [nodes, isAdmin, saveLocal]);
+
+    // Proper Cleanup on Node Delete
+    const onNodesDelete = useCallback((deletedNodes: Node[]) => {
+        if (!isAdmin) return;
+        const deletedIds = new Set(deletedNodes.map(n => n.id));
+        setEdges(eds => {
+            const newEdges = eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target));
+            saveLocal(nodes.filter(n => !deletedIds.has(n.id)), newEdges);
+            return newEdges;
         });
     }, [nodes, isAdmin, saveLocal]);
 
@@ -621,8 +737,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     }, [nodes, edges, edgeType, saveLocal]);
 
     const onEdgeClick = useCallback((ev: React.MouseEvent, e: Edge) => {
-        if (!isAdmin || e.id.startsWith('v_')) return;
-        ev.stopPropagation();
+        if (!isAdmin) return;
+        // ev.stopPropagation(); // Fixed: Allow selection for deletion
         if (edgeClickTimeoutRef.current) {
             clearTimeout(edgeClickTimeoutRef.current);
             edgeClickTimeoutRef.current = null;
@@ -640,7 +756,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     }, [isAdmin, nodes, saveLocal]);
 
     const onEdgeDoubleClick = useCallback((ev: React.MouseEvent, e: Edge) => {
-        if (!isAdmin || e.id.startsWith('v_')) return;
+        if (!isAdmin) return;
         ev.stopPropagation();
         if (edgeClickTimeoutRef.current) { clearTimeout(edgeClickTimeoutRef.current); edgeClickTimeoutRef.current = null; }
         if (confirm("삭제할까요?")) {
@@ -653,53 +769,86 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     }, [isAdmin, nodes, saveLocal]);
 
     // Admin Form Node Logic
-    const [formData, setFormData] = useState<StoryNodeData>({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1 });
+    const [formData, setFormData] = useState<StoryNodeData>({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1, splitType: 'none' });
 
-    const handleSaveNode = () => {
+    const handleSaveNode = async () => {
         if (!formData.label) { alert("제목 입력!"); return; }
+        if (!supabase || !sessionPassword.current) return;
 
         const getDimensions = () => {
-            if (formData.type === 'main') return { w: 260, h: 380 };
-            if (formData.type === 'theme') return { w: 320, h: 200 };
-
-            // For 'etc', use the detected image ratio if available
-            const tempW = (formData as any)._tempW;
-            const tempH = (formData as any)._tempH;
-            if (formData.type === 'etc' && tempW && tempH) {
-                const baseW = 320;
-                return { w: baseW, h: (tempH / tempW) * baseW };
-            }
-            return { w: 300, h: 200 }; // Fallback for etc without image detection
+            if (formData.type === 'main') return { w: 406, h: 645 };
+            if (formData.type === 'theme') return { w: 520, h: 260 };
+            return { w: 300, h: 200 };
         };
 
         const { w, h } = getDimensions();
 
-        if (editingNodeId) {
-            const up = nodes.map(n => {
-                if (n.id === editingNodeId) {
-                    // Preserve existing dimensions if it was manually resized, 
-                    // otherwise use default if it's a type change (optional logic)
-                    const finalW = n.width || w;
-                    const finalH = n.height || h;
-                    return { ...n, width: finalW, height: finalH, data: { ...n.data, ...formData } };
-                }
-                return n;
-            });
-            setNodes(up);
-            saveLocal(up, edges);
-        } else {
-            const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-            const newNode: Node<StoryNodeData> = {
-                id: `n_${Date.now()}`, position: { x: center.x - w / 2, y: center.y - h / 2 },
-                data: { ...formData, watched: false, isAdmin } as StoryNodeData,
-                type: 'storyNode', width: w, height: h
-            };
-            const up = [...nodes, newNode];
-            setNodes(up);
-            saveLocal(up, edges);
+        try {
+            let storyId = (formData as any).story_id;
+
+            if (editingNodeId && storyId) {
+                // Update existing master story
+                await supabase.rpc('update_master_story', {
+                    p_id: storyId,
+                    p_label: formData.label,
+                    p_type: formData.type,
+                    p_image: formData.image,
+                    p_youtube_url: formData.youtubeUrl || '',
+                    p_protagonist: formData.protagonist || '',
+                    p_part_label: formData.partLabel || '',
+                    p_importance: formData.importance || 1,
+                    p_password: sessionPassword.current,
+                    p_split_type: formData.splitType || 'none'
+                });
+            } else {
+                // Create new master story
+                const { data: newId, error } = await supabase.rpc('create_master_story', {
+                    p_label: formData.label,
+                    p_type: formData.type,
+                    p_image: formData.image,
+                    p_youtube_url: formData.youtubeUrl || '',
+                    p_protagonist: formData.protagonist || '',
+                    p_part_label: formData.partLabel || '',
+                    p_importance: formData.importance || 1,
+                    p_password: sessionPassword.current,
+                    p_split_type: formData.splitType || 'none'
+                });
+                if (error || !newId) throw new Error("Master story creation failed");
+                storyId = newId;
+            }
+
+            if (editingNodeId) {
+                const up = nodes.map(n => {
+                    if (n.id === editingNodeId) {
+                        return { ...n, data: { ...n.data, ...formData, story_id: storyId } };
+                    }
+                    return n;
+                });
+                setNodes(up);
+                const ok = await syncToCloud(up, edges);
+                if (ok) alert("저장되었습니다.");
+                else alert("클라우드 저장 실패! (로컬에는 저장됨)");
+            } else {
+                const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+                const newNode: Node<StoryNodeData> = {
+                    id: `n_${Date.now()}`,
+                    position: { x: center.x - w / 2, y: center.y - h / 2 },
+                    data: { ...formData, story_id: storyId, watched: false, isAdmin } as StoryNodeData,
+                    type: 'storyNode', width: w, height: h,
+                    style: { width: w, height: h }
+                };
+                const up = [...nodes, newNode];
+                setNodes(up);
+                const ok = await syncToCloud(up, edges);
+                if (ok) alert("저장되었습니다.");
+                else alert("클라우드 저장 실패! (로컬에는 저장됨)");
+            }
+            setShowForm(false);
+            setEditingNodeId(null);
+        } catch (err) {
+            console.error("Save error:", err);
+            alert("저장 중 오류가 발생했습니다.");
         }
-        setShowForm(false);
-        setEditingNodeId(null);
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -744,6 +893,32 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         }
     };
 
+    const fetchStorageImages = async () => {
+        if (!supabase) return;
+        setIsLoadingGallery(true);
+        try {
+            // Fetch images from within season folders (nodes/1, nodes/2, etc.)
+            const allFiles: any[] = [];
+            const folders = ['1', '2', '3']; // Supported seasons
+
+            for (const f of folders) {
+                const { data, error } = await supabase.storage.from('story-images').list(`nodes/${f}`, {
+                    limit: 100,
+                    sortBy: { column: 'name', order: 'desc' }
+                });
+                if (data) {
+                    allFiles.push(...data.map(img => ({ ...img, folder: f })));
+                }
+            }
+
+            setStorageImages(allFiles);
+        } catch (err) {
+            console.error("Failed to fetch images:", err);
+        } finally {
+            setIsLoadingGallery(false);
+        }
+    };
+
     const toggleWatch = (id: string) => {
         setNodes(nds => nds.map(n => {
             if (n.id === id) {
@@ -761,6 +936,56 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             }
             return n;
         }));
+    };
+
+    const fetchMasterStories = async () => {
+        if (!supabase) return;
+        setIsFetchingMasters(true);
+        try {
+            const { data, error } = await supabase
+                .from('master_stories')
+                .select('*')
+                .order('label', { ascending: true });
+            if (error) throw error;
+            setMasterStories(data || []);
+        } catch (err) {
+            console.error("Fetch master stories error:", err);
+        } finally {
+            setIsFetchingMasters(false);
+        }
+    };
+
+    const handleImportMaster = (m: any) => {
+        const getDimensions = (type: string) => {
+            if (type === 'main') return { w: 406, h: 645 };
+            if (type === 'theme') return { w: 520, h: 260 };
+            return { w: 300, h: 200 };
+        };
+        const { w, h } = getDimensions(m.type);
+        const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+
+        const newNode: Node<StoryNodeData> = {
+            id: `n_${Date.now()}`,
+            position: { x: center.x - w / 2, y: center.y - h / 2 },
+            data: {
+                label: m.label,
+                type: m.type,
+                image: m.image,
+                youtubeUrl: m.youtube_url,
+                protagonist: m.protagonist,
+                importance: m.importance,
+                story_id: m.id,
+                watched: false,
+                isAdmin,
+                splitType: m.split_type || 'none'
+            } as StoryNodeData,
+            type: 'storyNode',
+            width: w,
+            height: h
+        };
+
+        setNodes(nds => [...nds, newNode]);
+        setShowMasterLibrary(false);
     };
 
     const isProd = process.env.NODE_ENV === 'production';
@@ -782,7 +1007,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 <div className="flex items-center justify-between w-full md:w-auto gap-3 shrink-0">
                     <div className="flex items-center gap-2">
                         <div className="group relative flex items-center justify-center">
-                            <div className="p-2 rounded-xl bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 cursor-help transition-all border border-slate-700/50">
+                            <div className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 cursor-help transition-all border border-slate-700">
                                 <Info size={18} />
                             </div>
                             <div className="absolute top-full left-0 mt-2 w-64 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[100] scale-95 group-hover:scale-100 origin-top-left pointer-events-none">
@@ -797,15 +1022,38 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
                         <button
                             onClick={onToggleView}
-                            className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 rounded-xl border border-slate-700/50 transition-all text-xs font-bold shrink-0"
+                            className="p-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 rounded-xl border border-slate-700 transition-all shrink-0"
+                            title="Mobile View"
                         >
                             <Smartphone size={18} />
-                            <span>Mobile View</span>
                         </button>
                     </div>
 
                     <div className="flex md:hidden items-center gap-2">
-                        <select value={season} onChange={e => setSeason(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs font-bold outline-none font-mono">
+                        <button
+                            onClick={() => setShowMemo(true)}
+                            className={`p-2.5 rounded-xl border transition-all active:scale-95 ${memoText.trim()
+                                ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20'
+                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-indigo-400 hover:bg-slate-700'
+                                }`}
+                            title="메모장 열기"
+                        >
+                            <StickyNote size={18} />
+                        </button>
+                        <select
+                            value={viewType}
+                            onChange={(e) => setViewType(e.target.value as any)}
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold outline-none text-indigo-400 transition-all hover:bg-slate-700"
+                        >
+                            <option value="recommended">추천</option>
+                            <option value="release">출시</option>
+                            <option value="chrono">시간</option>
+                        </select>
+                        <select
+                            value={season}
+                            onChange={e => setSeason(Number(e.target.value))}
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold outline-none text-indigo-400 transition-all hover:bg-slate-700"
+                        >
                             <option value={1}>S1</option>
                             <option value={2}>S2</option>
                             <option value={3}>S3</option>
@@ -833,45 +1081,47 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 <div className="hidden md:flex items-center gap-3">
                     <button
                         onClick={() => setShowMemo(true)}
-                        className={`p-2.5 rounded-xl transition-all shadow-xl active:scale-95 border-2 ${memoText.trim()
-                            ? 'bg-indigo-600 border-white text-white shadow-[0_0_25px_rgba(99,102,241,1)]'
-                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-indigo-400'
+                        className={`p-2.5 rounded-xl transition-all active:scale-95 border ${memoText.trim()
+                            ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20'
+                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-indigo-400 hover:bg-slate-700'
                             }`}
                         title="메모장 열기"
                     >
-                        <StickyNote size={20} />
+                        <StickyNote size={18} />
                     </button>
-                    <select value={season} onChange={e => setSeason(Number(e.target.value))} className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-sm font-bold outline-none">
+                    <select
+                        value={viewType}
+                        onChange={(e) => setViewType(e.target.value as any)}
+                        className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
+                    >
+                        <option value="recommended" className="bg-slate-900">추천 순서</option>
+                        <option value="release" className="bg-slate-900">출시 순서</option>
+                    </select>
+                    <select
+                        value={season}
+                        onChange={e => setSeason(Number(e.target.value))}
+                        className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
+                    >
                         <option value={1}>Season 1</option>
                         <option value={2}>Season 2</option>
                         <option value={3}>Season 3</option>
                     </select>
                 </div>
 
-                <div className="md:hidden fixed bottom-24 right-6 z-[60]">
-                    <button
-                        onClick={() => setShowMemo(true)}
-                        className={`p-4 rounded-full shadow-2xl active:scale-95 border-2 ${memoText.trim()
-                            ? 'bg-indigo-600 border-white text-white shadow-lg'
-                            : 'bg-slate-800 border-slate-700 text-slate-400 shadow-lg'
-                            }`}
-                    >
-                        <StickyNote size={24} />
-                    </button>
-                </div>
             </header >
 
             <main className="flex-grow bg-transparent z-10 relative">
                 <ReactFlow
                     nodes={displayNodes} edges={displayEdges}
                     onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+                    onNodesDelete={onNodesDelete}
                     onConnect={onConnect} onEdgeClick={onEdgeClick} onEdgeDoubleClick={onEdgeDoubleClick}
                     nodeTypes={nodeTypes}
                     onNodeClick={(e, node) => isAdmin ? (setEditingNodeId(node.id), setFormData({ ...node.data }), setShowForm(true)) : toggleWatch(node.id)}
                     minZoom={fromDisplayZoom(0.6)} maxZoom={fromDisplayZoom(1.5)}
                     panOnScroll={false} zoomOnScroll={false} zoomOnPinch={false} zoomOnDoubleClick={false}
                     preventScrolling={true}
-                    deleteKeyCode={isAdmin ? "Delete" : null}
+                    deleteKeyCode={isAdmin ? ["Delete", "Backspace"] : null}
                     snapToGrid={true}
                     snapGrid={[20, 20]}
                     connectionLineType={ConnectionLineType.Step}
@@ -907,6 +1157,205 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     </div>
                 )
             }
+
+            {/* Storage Gallery Modal */}
+            {showGallery && (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-6">
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[85vh] shadow-2xl overflow-hidden flex flex-col">
+                        <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
+                                    <ImageIcon size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-100 italic tracking-tight">STORAGE GALLERY</h3>
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Select from existing S3 images</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowGallery(false)} className="text-slate-500 hover:text-white transition-colors">
+                                <X size={24} />
+                            </button>
+                        </header>
+
+                        <div className="flex-grow overflow-y-auto p-6 custom-scrollbar bg-slate-950/20">
+                            <div className="flex items-center gap-2 mb-6 p-1 bg-slate-800/50 rounded-2xl w-fit border border-slate-700/50">
+                                {['all', '1', '2', '3'].map((f) => (
+                                    <button
+                                        key={f}
+                                        onClick={() => setGalleryFolder(f)}
+                                        className={`px-4 py-2 rounded-xl text-[10px] font-black transition-all uppercase tracking-widest ${galleryFolder === f
+                                            ? 'bg-indigo-600 text-white shadow-lg'
+                                            : 'text-slate-500 hover:text-slate-300'
+                                            }`}
+                                    >
+                                        {f === 'all' ? '전체' : `Season ${f}`}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {isLoadingGallery ? (
+                                <div className="h-64 flex flex-col items-center justify-center gap-4 text-slate-500">
+                                    <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                    <p className="text-xs font-bold animate-pulse uppercase tracking-widest">Fetching Assets...</p>
+                                </div>
+                            ) : storageImages.length === 0 ? (
+                                <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-500">
+                                    <Info size={40} className="opacity-20" />
+                                    <p className="text-sm font-bold opacity-40">저장된 이미지가 없습니다.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                    {storageImages
+                                        .filter(img => galleryFolder === 'all' || img.folder === galleryFolder)
+                                        .map((img, idx) => {
+                                            const publicUrl = supabase?.storage.from('story-images').getPublicUrl(`nodes/${img.folder}/${img.name}`).data.publicUrl;
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    onClick={() => {
+                                                        if (publicUrl) {
+                                                            setFormData(prev => ({ ...prev, image: publicUrl }));
+                                                            setShowGallery(false);
+                                                        }
+                                                    }}
+                                                    className="group relative aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-indigo-500 transition-all hover:shadow-2xl hover:shadow-indigo-500/20"
+                                                >
+                                                    <img src={publicUrl} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={img.name} loading="lazy" />
+                                                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/90 to-transparent">
+                                                        <p className="text-[9px] font-mono text-white/50 truncate mb-1">{img.name}</p>
+                                                        <span className="text-[10px] font-black bg-indigo-500 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter">Season {img.folder}</span>
+                                                    </div>
+                                                    <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/30 transition-all flex items-center justify-center">
+                                                        <div className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all shadow-2xl">
+                                                            <Plus size={24} />
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                </div>
+                            )}
+                        </div>
+                        <footer className="p-4 bg-slate-900 border-t border-slate-800 flex justify-end">
+                            <button onClick={() => setShowGallery(false)} className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-black rounded-xl transition-all text-[10px] uppercase tracking-widest border border-slate-700">
+                                Close Gallery
+                            </button>
+                        </footer>
+                    </div>
+                </div>
+            )}
+
+            {showMasterLibrary && (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-2xl z-[300] flex items-center justify-center p-6">
+                    <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl max-h-[85vh] shadow-2xl overflow-hidden flex flex-col">
+                        <header className="p-5 border-b border-slate-800 flex flex-col gap-4 bg-slate-800/50">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
+                                        <Library size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-100 italic tracking-tight">MASTER STORY LIBRARY</h3>
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Select an existing story to import</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowMasterLibrary(false)} className="text-slate-500 hover:text-white transition-colors">
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
+                                {(['main', 'theme', 'etc'] as const).map((cat) => (
+                                    <button
+                                        key={cat}
+                                        onClick={() => setLibraryCategory(cat)}
+                                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${libraryCategory === cat
+                                            ? 'bg-indigo-600 text-white shadow-lg'
+                                            : 'text-slate-500 hover:text-slate-300'
+                                            }`}
+                                    >
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Library Search Input */}
+                            <div className="relative mt-2">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                                <input
+                                    type="text"
+                                    placeholder="도서관 내 제목 또는 주인공 검색..."
+                                    value={masterSearchQuery}
+                                    onChange={e => setMasterSearchQuery(e.target.value)}
+                                    className="w-full bg-slate-950/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-slate-200"
+                                />
+                                {masterSearchQuery && (
+                                    <button
+                                        onClick={() => setMasterSearchQuery('')}
+                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+                        </header>
+
+                        <div className="flex-grow overflow-y-auto p-6 custom-scrollbar bg-slate-950/20">
+                            {isFetchingMasters ? (
+                                <div className="h-64 flex flex-col items-center justify-center gap-4 text-slate-500">
+                                    <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                    <p className="text-xs font-bold animate-pulse uppercase tracking-widest">Loading Library...</p>
+                                </div>
+                            ) : filteredMasterStories.length === 0 ? (
+                                <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-500">
+                                    <Library size={40} className="opacity-20" />
+                                    <p className="text-sm font-bold opacity-40">
+                                        {masterSearchQuery ? '검색 결과가 없습니다.' : '이 카테고리에 마스터 노드가 없습니다.'}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                    {filteredMasterStories.map((m) => (
+                                        <button
+                                            key={m.id}
+                                            onClick={() => handleImportMaster(m)}
+                                            className="group relative aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-indigo-500 transition-all hover:shadow-2xl hover:shadow-indigo-500/20"
+                                        >
+                                            {m.image ? (
+                                                <img src={m.image} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={m.label} loading="lazy" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-slate-700/30">
+                                                    <ImageIcon size={32} className="text-slate-600" />
+                                                </div>
+                                            )}
+                                            <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/95 via-black/70 to-transparent">
+                                                <p className="text-[10px] font-bold text-white truncate mb-1">{m.label}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter ${m.type === 'main' ? 'bg-indigo-500/80 text-white' :
+                                                        m.type === 'theme' ? 'bg-amber-500/80 text-white' :
+                                                            'bg-emerald-500/80 text-white'
+                                                        }`}>
+                                                        {m.type}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/30 transition-all flex items-center justify-center">
+                                                <div className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all shadow-2xl">
+                                                    <Plus size={24} />
+                                                </div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <footer className="p-4 bg-slate-900 border-t border-slate-800 flex justify-end">
+                            <button onClick={() => setShowMasterLibrary(false)} className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-black rounded-xl transition-all text-[10px] uppercase tracking-widest border border-slate-700">
+                                Close Library
+                            </button>
+                        </footer>
+                    </div>
+                </div>
+            )}
 
             {/* Admin Form Modal */}
             {
@@ -974,11 +1423,20 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                 accept="image/*"
                                             />
                                             <button
+                                                onClick={() => {
+                                                    fetchStorageImages();
+                                                    setShowGallery(true);
+                                                }}
+                                                className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 text-sm"
+                                            >
+                                                <ImageIcon size={18} /> 보관함에서 선택
+                                            </button>
+                                            <button
                                                 onClick={() => fileInputRef.current?.click()}
                                                 disabled={isUploading}
                                                 className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 text-sm"
                                             >
-                                                <ImageIcon size={18} /> {isUploading ? '업로드 중...' : '이미지 업로드'}
+                                                <Plus size={18} /> {isUploading ? '업로드 중...' : '새 파일 업로드'}
                                             </button>
                                             <div className="relative">
                                                 <input
@@ -1053,7 +1511,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     {editingNodeId && (
                                         <button
                                             onClick={() => {
-                                                if (confirm("이 노드를 삭제하시겠습니까?")) {
+                                                if (confirm("이 노드를 삭제하시겠습니까? (현재 탭의 배치에서만 삭제되며, 마스터 데이터는 도서관에 유지됩니다)")) {
                                                     const up = nodes.filter(n => n.id !== editingNodeId);
                                                     setNodes(up);
                                                     saveLocal(up, edges);
@@ -1112,14 +1570,29 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             }
 
             <div className="fixed bottom-6 right-6 z-50 opacity-[0.05] hover:opacity-100 transition-opacity">
-                <button onClick={toggleAdmin} className="p-2 rounded-xl bg-slate-800/50 text-slate-400 border border-slate-700 shadow-lg hover:bg-slate-700 transition-all"><Shield size={18} /></button>
+                {process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+                    <button onClick={toggleAdmin} className="p-2 rounded-xl bg-slate-800/50 text-slate-400 border border-slate-700 shadow-lg hover:bg-slate-700 transition-all"><Shield size={18} /></button>
+                )}
             </div>
 
             {
                 isAdmin && (
-                    <div className="fixed bottom-24 right-6 pt-2 z-[60]">
-                        <button onClick={() => (setEditingNodeId(null), setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1 }), setShowForm(true))} className="bg-green-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-green-700 flex items-center gap-2">
-                            <Plus size={20} /> 새 노드
+                    <div className="fixed bottom-24 right-6 pt-2 z-[60] flex flex-col gap-3 items-end">
+                        <button
+                            onClick={() => {
+                                fetchMasterStories();
+                                setMasterSearchQuery(''); // Reset search when opening
+                                setShowMasterLibrary(true);
+                            }}
+                            className="bg-indigo-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-indigo-700 flex items-center gap-2 font-bold transition-all active:scale-95"
+                        >
+                            <Library size={20} /> 마스터 불러오기
+                        </button>
+                        <button
+                            onClick={() => (setEditingNodeId(null), setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1 }), setShowForm(true))}
+                            className="bg-green-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-green-700 flex items-center gap-2 font-bold transition-all active:scale-95"
+                        >
+                            <Plus size={20} /> 새 마스터 생성
                         </button>
                     </div>
                 )

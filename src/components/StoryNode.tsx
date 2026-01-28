@@ -18,6 +18,9 @@ export interface StoryNodeData {
     partLabel?: string; // New: Text like "1~12화"
     nodeScale?: number; // New: Precise node scaling
     onPlayVideo?: (url: string) => void;
+    story_id?: string;
+    m_x?: number;
+    m_y?: number;
 }
 
 const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
@@ -92,7 +95,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                     minWidth={100}
                     minHeight={100}
                     isVisible={selected}
-                    keepAspectRatio={data.type === 'main'} // Only Main story keeps ratio
+                    keepAspectRatio={false} // Allow free resizing for all types
                     lineStyle={{ border: '2px dashed #4f46e5' }}
                     handleStyle={{ width: 10, height: 10, borderRadius: 2 }}
                 />
@@ -107,15 +110,24 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             {/* Image Header wrapper with Split Indicator */}
             <div className={`relative bg-slate-900 overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
                 {data.image ? (
-                    <img
-                        src={data.image.startsWith('http') || data.image.startsWith('data:') ? data.image : `${basePath}/images/${data.image}`}
-                        alt={data.label}
-                        loading="lazy"
-                        className={`w-full h-full block transition-opacity duration-500 ${data.type === 'etc' ? 'object-contain' : 'object-cover'}`}
-                        onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://via.placeholder.com/256x128?text=Image+Not+Found';
-                        }}
-                    />
+                    (() => {
+                        const imgSrc = data.image.startsWith('http') || data.image.startsWith('data:')
+                            ? data.image
+                            : `${basePath}/images/${data.image}`;
+
+                        return (
+                            <img
+                                src={imgSrc}
+                                alt={data.label}
+                                loading="eager"
+                                data-node-id={data.story_id}
+                                className={`w-full h-full block ${data.type === 'etc' ? 'object-contain' : 'object-cover'}`}
+                                onError={(e) => {
+                                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/256x128?text=Image+Not+Found';
+                                }}
+                            />
+                        );
+                    })()
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs py-10">
                         No Image
