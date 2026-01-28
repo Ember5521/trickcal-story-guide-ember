@@ -918,7 +918,24 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
             {showInfo && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full relative"><button onClick={() => setShowInfo(false)} className="absolute top-4 right-4 text-slate-500"><X size={20} /></button><h2 className="text-lg font-black mb-4 uppercase italic">Notice</h2><p className="text-xs text-slate-400">비공식 가이드입니다.</p><button onClick={() => setShowInfo(false)} className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase">Check</button></div>
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full relative">
+                        <button onClick={() => setShowInfo(false)} className="absolute top-4 right-4 text-slate-500">
+                            <X size={20} />
+                        </button>
+                        <h2 className="text-lg font-black mb-4 uppercase italic text-indigo-400">Notice</h2>
+                        <div className="space-y-3">
+                            <p className="text-[11px] leading-relaxed text-slate-300">
+                                <b>가이드 안내</b><br />
+                                • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
+                                • 추천 순서: 극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 권장하는 진행 순서입니다.<br />
+                                • 출시 순서: Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.<br />
+                                • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
+                            </p>
+                        </div>
+                        <button onClick={() => setShowInfo(false)} className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase shadow-lg shadow-indigo-600/20 active:scale-[0.98] transition-all">
+                            Check
+                        </button>
+                    </div>
                 </div>
             )}
 

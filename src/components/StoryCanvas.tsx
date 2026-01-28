@@ -1013,9 +1013,10 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             <div className="absolute top-full left-0 mt-2 w-64 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[100] scale-95 group-hover:scale-100 origin-top-left pointer-events-none">
                                 <p className="text-xs leading-relaxed text-slate-300">
                                     <b>가이드 안내</b><br />
-                                    • 본 스토리 가이드는 공식 가이드가 아닙니다.<br />
-                                    • 극장 개편에 따라 기존 출시 순서와 인게임 내 실제 접근 가능한 순서를 종합적으로 고려하여 정리된 순서로, 일부 어색한 부분이 있을 수 있습니다.<br />
-                                    • 본 사이트는 문제가 발생할 경우 즉시 운영을 중단할 수 있으며, 모든 영상 및 이미지에 대한 저작권은 Epid Games에 귀속됩니다.
+                                    • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
+                                    • 추천 순서: 극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 권장하는 진행 순서입니다.<br />
+                                    • 출시 순서: Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.<br />
+                                    • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                                 </p>
                             </div>
                         </div>
