@@ -69,6 +69,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [isModalFullscreen, setIsModalFullscreen] = useState(false);
     const [edgeType, setEdgeType] = useState<'step' | 'straight'>('step');
     const [isUploading, setIsUploading] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
 
     // Memo State
     const [showMemo, setShowMemo] = useState(false);
@@ -661,6 +662,46 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             } else {
                 alert("권한이 없습니다.");
             }
+        }
+    };
+
+    const handleSyncToDeploy = async () => {
+        if (!isAdmin) return;
+        const pw = sessionPassword.current;
+        if (!pw) {
+            alert("관리자 세션이 만료되었습니다. 다시 로그인해주세요.");
+            setIsAdmin(false);
+            return;
+        }
+
+        if (!confirm("현재 개발 서버의 모든 데이터를 운영 서버(Deploy)로 덮어씌우시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) {
+            return;
+        }
+
+        setIsSyncing(true);
+        try {
+            const response = await fetch('/api/sync-db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pw })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || '동기화 중 오류가 발생했습니다.');
+            }
+
+            let summary = "동기화 완료!\n\n";
+            for (const [table, detail] of Object.entries(result.details || {})) {
+                summary += `• ${table}: ${detail}\n`;
+            }
+            alert(summary);
+        } catch (err: any) {
+            console.error("Sync error:", err);
+            alert(`동기화 실패: ${err.message}`);
+        } finally {
+            setIsSyncing(false);
         }
     };
 
@@ -1579,6 +1620,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             {
                 isAdmin && (
                     <div className="fixed bottom-24 right-6 pt-2 z-[60] flex flex-col gap-3 items-end">
+                        <button
+                            onClick={handleSyncToDeploy}
+                            disabled={isSyncing}
+                            className={`bg-amber-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-amber-700 flex items-center gap-2 font-bold transition-all active:scale-95 ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            <Monitor size={20} className={isSyncing ? 'animate-spin' : ''} />
+                            {isSyncing ? '동기화 중...' : '운영 서버로 동기화'}
+                        </button>
                         <button
                             onClick={() => {
                                 fetchMasterStories();
