@@ -5,9 +5,10 @@ import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
     X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone,
-    Image as ImageIcon, Shield, Library
+    Image as ImageIcon, Shield, Library, TriangleAlert
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import AnnotationNode from './AnnotationNode';
 import ReactFlow, {
     Background,
     applyEdgeChanges,
@@ -33,6 +34,7 @@ import StoryNode, { StoryNodeData } from './StoryNode';
 
 const nodeTypes = {
     storyNode: StoryNode,
+    annotationNode: AnnotationNode,
 };
 
 const initialNodes: Node<StoryNodeData>[] = [];
@@ -83,7 +85,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
-    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc'>('main');
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal' | 'annotation'>('main');
     const [masterSearchQuery, setMasterSearchQuery] = useState('');
 
     const containerRef = useRef<HTMLDivElement>(null);
@@ -127,8 +129,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
         return nodes.map(node => {
             const isHidden = false;
-            const isMatched = isSearchActive && (
-                node.data.label.toLowerCase().includes(query) ||
+            const isMatched = isSearchActive && node.type === 'storyNode' && (
+                node.data.label?.toLowerCase().includes(query) ||
                 (node.data.protagonist?.toLowerCase().includes(query))
             );
 
@@ -346,17 +348,31 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
         try {
             // Convert React Flow nodes to layout storage format (only id, story_id, position, and mobile coords)
-            const layoutNodes = n.map(node => ({
-                id: node.id,
-                story_id: (node.data as any).story_id || (node.data as any).id, // Fallback for migration period
-                x: node.position.x,
-                y: node.position.y,
-                w: node.width,
-                h: node.height,
-                m_x: node.data.m_x,
-                m_y: node.data.m_y,
-                splitType: node.data.splitType // Save splitType
-            }));
+            const layoutNodes = n.map(node => {
+                const base = {
+                    id: node.id,
+                    type: node.type,
+                    x: node.position.x,
+                    y: node.position.y,
+                    w: node.width || (node.type === 'annotationNode' ? 64 : 300),
+                    h: node.height || (node.type === 'annotationNode' ? 64 : 200),
+                };
+
+                if (node.type === 'annotationNode') {
+                    return {
+                        ...base,
+                        content: node.data.content
+                    };
+                }
+
+                return {
+                    ...base,
+                    story_id: (node.data as any).story_id,
+                    m_x: node.data.m_x,
+                    m_y: node.data.m_y,
+                    splitType: node.data.splitType
+                };
+            });
 
             console.log(`Cloud sync starting for ${viewType} ${season}...`, { nodeCount: layoutNodes.length, edgeCount: e.length });
 
@@ -489,7 +505,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
                     if (layout && !lError) {
                         const layoutNodes = layout.nodes as any[];
-                        const storyIds = layoutNodes.map(ln => ln.story_id);
+                        // Filter for story nodes and ensure only valid UUIDs are passed to the master_stories query
+                        const storyIds = layoutNodes
+                            .filter(ln => ln.type !== 'annotationNode' && ln.story_id)
+                            .map(ln => ln.story_id)
+                            .filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
 
                         const { data: masters, error: mError } = await supabase
                             .from('master_stories')
@@ -505,6 +525,20 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             let emptyImageCount = 0;
 
                             const finalNodes = layoutNodes.map(ln => {
+                                if (ln.type === 'annotationNode') {
+                                    return {
+                                        id: ln.id,
+                                        type: 'annotationNode',
+                                        position: { x: ln.x || 0, y: ln.y || 0 },
+                                        data: {
+                                            content: ln.content,
+                                            isAdmin,
+                                            onDelete: handleDeleteAnnotation,
+                                            onUpdate: handleUpdateAnnotation
+                                        }
+                                    } as Node<StoryNodeData>;
+                                }
+
                                 const master = masterMap.get(ln.story_id);
                                 if (!master) {
                                     missingMasterCount++;
@@ -545,7 +579,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         m_y: ln.m_y,
                                         splitType: ln.splitType || masterData.split_type || 'none', // Load splitType with fallback
                                         watched: !!hist[ln.id],
-                                        isAdmin
+                                        isAdmin,
+                                        onDelete: handleDeleteAnnotation,
+                                        onUpdate: handleUpdateAnnotation
                                     }
                                 } as Node<StoryNodeData>;
                             });
@@ -562,13 +598,13 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         y: target.position.y,
                                         w: target.width,
                                         h: target.height,
-                                        type: target.data.type,
+                                        type: (target.data as any).type,
                                         style: target.style
                                     });
                                 }
 
                                 // Check for Main nodes with wrong dimensions (wide instead of tall)
-                                const badMainNodes = finalNodes.filter(n => n.data.type === 'main' && n.width && n.width > 280);
+                                const badMainNodes = finalNodes.filter(n => (n.data as any).type === 'main' && n.width && n.width > 280);
                                 if (badMainNodes.length > 0) {
                                     console.log("[Season 2] Sizing Mismatch Detected:", badMainNodes.map(n => ({ label: n.data.label, w: n.width, h: n.height })));
                                 }
@@ -576,22 +612,21 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
                             if (missingMasterCount > 0 || emptyImageCount > 0) {
                                 const samples = finalNodes.filter(n => !n.data.label || !n.data.image).slice(0, 5);
-                                console.log(`[Season ${season}] Samples of problematic nodes:`, samples.map(s => ({ id: s.id, story_id: s.data.story_id, label: s.data.label })));
+                                console.log(`[Season ${season}] Samples of problematic nodes:`, samples.map(s => ({ id: s.id, story_id: (s.data as any).story_id, label: s.data.label })));
                             }
 
                             setNodes(finalNodes);
                             setEdges(layout.edges);
                         }
                     } else {
-                        // Fallback to old table for backward compatibility during migration if needed
-                        // Or just show empty if fully migrated
+                        // Layout not found is not necessarily an error, just an empty layout
                         console.warn("Layout not found for", viewType, season);
                     }
+                    setIsLoaded(true); // Only mark as loaded if fetch was successful (or layout found but empty)
                 }
             } catch (err) {
                 console.error("Data load error:", err);
-            } finally {
-                setIsLoaded(true);
+                // DO NOT set isLoaded(true) here to prevent auto-syncing an empty/error state
             }
         };
         load();
@@ -620,6 +655,30 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         return () => clearTimeout(timer);
     }, [nodes, edges, isAdmin, isLoaded]);
 
+    const handleDeleteAnnotation = useCallback((id: string) => {
+        setNodes(nds => nds.filter(n => n.id !== id));
+    }, []);
+
+    const handleUpdateAnnotation = useCallback((id: string, content: string) => {
+        setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, content } } : n));
+    }, []);
+
+    const handleAddAnnotation = useCallback(() => {
+        const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        const newNode = {
+            id: `ann_${Date.now()}`,
+            type: 'annotationNode',
+            position: { x: center.x - 24, y: center.y - 24 },
+            data: {
+                content: '새 주석입니다. 클릭하여 수정하세요.',
+                isAdmin: true,
+                onDelete: handleDeleteAnnotation,
+                onUpdate: handleUpdateAnnotation
+            }
+        };
+        setNodes(nds => [...nds, newNode]);
+    }, [screenToFlowPosition, handleDeleteAnnotation, handleUpdateAnnotation]);
+
     // Independent Initial Focus Trigger
     useEffect(() => {
         if (nodes.length > 0 && !isInitialFocusDone.current) {
@@ -636,7 +695,15 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             if (ok) alert("저장되었습니다.");
             else if (!confirm("저장 실패. 무시하고 나갈까요?")) return;
             setIsAdmin(false);
-            setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, isAdmin: false } })));
+            setNodes(nds => nds.map(n => ({
+                ...n,
+                data: {
+                    ...n.data,
+                    isAdmin: false,
+                    onDelete: handleDeleteAnnotation,
+                    onUpdate: handleUpdateAnnotation
+                }
+            })));
         } else {
             const pw = prompt("비밀번호");
             if (!pw) return;
@@ -658,7 +725,15 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             if (isValid) {
                 sessionPassword.current = pw;
                 setIsAdmin(true);
-                setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, isAdmin: true } })));
+                setNodes(nds => nds.map(n => ({
+                    ...n,
+                    data: {
+                        ...n.data,
+                        isAdmin: true,
+                        onDelete: handleDeleteAnnotation,
+                        onUpdate: handleUpdateAnnotation
+                    }
+                })));
             } else {
                 alert("권한이 없습니다.");
             }
@@ -700,6 +775,43 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         } catch (err: any) {
             console.error("Sync error:", err);
             alert(`동기화 실패: ${err.message}`);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const handlePullFromDeploy = async () => {
+        if (!isAdmin) return;
+        const pw = sessionPassword.current;
+        if (!pw) {
+            alert("관리자 세션이 만료되었습니다. 다시 로그인해주세요.");
+            setIsAdmin(false);
+            return;
+        }
+
+        if (!confirm("운영 서버(Deploy)의 모든 데이터를 현재 개발 서버로 덮어씌우시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) {
+            return;
+        }
+
+        setIsSyncing(true);
+        try {
+            const response = await fetch('/api/sync-db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pw, mode: 'pull' })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || '가져오기 중 오류가 발생했습니다.');
+            }
+
+            alert("데이터를 성공적으로 가져왔습니다. 페이지를 새로고침합니다.");
+            window.location.reload();
+        } catch (err: any) {
+            console.error("Pull error:", err);
+            alert(`가져오기 실패: ${err.message}`);
         } finally {
             setIsSyncing(false);
         }
@@ -1071,35 +1183,64 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         </button>
                     </div>
 
-                    <div className="flex md:hidden items-center gap-2">
+                    <div className="flex items-center gap-2">
+                        {isAdmin && (
+                            <>
+                                <button
+                                    onClick={handleAddAnnotation}
+                                    className="p-3 md:p-4 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl border-2 border-amber-400 shadow-xl shadow-amber-500/30 transition-all flex items-center gap-3 active:scale-95 group"
+                                    title="주석 추가"
+                                >
+                                    <TriangleAlert size={24} className="group-hover:rotate-12 transition-transform" />
+                                    <span className="hidden lg:inline text-sm font-black uppercase tracking-tight">주석 추가</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        fetchMasterStories();
+                                        setShowMasterLibrary(true);
+                                    }}
+                                    className="p-2 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-xl border border-slate-700 transition-all"
+                                    title="마스터 도서관"
+                                >
+                                    <Library size={18} />
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setEditingNodeId(null);
+                                        setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1, splitType: 'none' });
+                                        setShowForm(true);
+                                    }}
+                                    className="p-2 bg-slate-800 hover:bg-slate-700 text-green-400 rounded-xl border border-slate-700 transition-all"
+                                    title="새 노드 생성"
+                                >
+                                    <Plus size={18} />
+                                </button>
+                                <button
+                                    onClick={handlePullFromDeploy}
+                                    disabled={isSyncing}
+                                    className={`p-2 rounded-xl border transition-all flex items-center gap-2 ${isSyncing ? 'bg-slate-800 text-slate-500' : 'bg-slate-800 hover:bg-slate-700 text-blue-400 border-slate-700'}`}
+                                    title="운영 서버에서 데이터 가져오기"
+                                >
+                                    <RotateCcw size={18} className={isSyncing ? 'animate-spin' : ''} />
+                                    <span className="hidden lg:inline text-xs font-bold">{isSyncing ? '가져오는 중...' : '배포에서 가져오기'}</span>
+                                </button>
+                                <button
+                                    onClick={handleSyncToDeploy}
+                                    disabled={isSyncing}
+                                    className={`p-2 rounded-xl border transition-all flex items-center gap-2 ${isSyncing ? 'bg-slate-800 text-slate-500' : 'bg-slate-800 hover:bg-slate-700 text-rose-400 border-slate-700'}`}
+                                    title="운영 서버로 동기화"
+                                >
+                                    <RotateCcw size={18} className={isSyncing ? 'animate-spin' : ''} />
+                                    <span className="hidden lg:inline text-xs font-bold">{isSyncing ? '동기화 중...' : '배포 동기화'}</span>
+                                </button>
+                            </>
+                        )}
                         <button
-                            onClick={() => setShowMemo(true)}
-                            className={`p-2.5 rounded-xl border transition-all active:scale-95 ${memoText.trim()
-                                ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20'
-                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-indigo-400 hover:bg-slate-700'
-                                }`}
-                            title="메모장 열기"
+                            onClick={toggleAdmin}
+                            className={`p-2.5 rounded-xl border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20' : 'bg-transparent border-none text-slate-800 opacity-[0.05] hover:opacity-50'}`}
                         >
-                            <StickyNote size={18} />
+                            <Shield size={18} />
                         </button>
-                        <select
-                            value={viewType}
-                            onChange={(e) => setViewType(e.target.value as any)}
-                            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold outline-none text-indigo-400 transition-all hover:bg-slate-700"
-                        >
-                            <option value="recommended">추천</option>
-                            <option value="release">출시</option>
-                            <option value="chrono">시간</option>
-                        </select>
-                        <select
-                            value={season}
-                            onChange={e => setSeason(Number(e.target.value))}
-                            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold outline-none text-indigo-400 transition-all hover:bg-slate-700"
-                        >
-                            <option value={1}>S1</option>
-                            <option value={2}>S2</option>
-                            <option value={3}>S3</option>
-                        </select>
                     </div>
                 </div>
 
@@ -1307,15 +1448,19 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             </div>
 
                             <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
-                                {(['main', 'theme', 'etc'] as const).map((cat) => (
+                                {(['main', 'theme', 'etc', 'eternal', 'annotation'] as const).map((cat) => (
                                     <button
                                         key={cat}
                                         onClick={() => setLibraryCategory(cat)}
-                                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${libraryCategory === cat
+                                        className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${libraryCategory === cat
                                             ? 'bg-indigo-600 text-white shadow-lg'
                                             : 'text-slate-500 hover:text-slate-300'
                                             }`}
                                     >
+                                        {cat === 'main' ? '메인' :
+                                            cat === 'theme' ? '테마' :
+                                                cat === 'etc' ? '기타' :
+                                                    cat === 'eternal' ? '영원살이' : '주석'}
                                     </button>
                                 ))}
                             </div>
@@ -1374,7 +1519,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                 <div className="flex items-center gap-2">
                                                     <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter ${m.type === 'main' ? 'bg-indigo-500/80 text-white' :
                                                         m.type === 'theme' ? 'bg-amber-500/80 text-white' :
-                                                            'bg-emerald-500/80 text-white'
+                                                            m.type === 'eternal' ? 'bg-amber-600 text-white border border-amber-400/50' :
+                                                                m.type === 'annotation' ? 'bg-orange-600 text-white' :
+                                                                    'bg-emerald-500/80 text-white'
                                                         }`}>
                                                         {m.type}
                                                     </span>
@@ -1424,6 +1571,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             <option value="main">메인스토리</option>
                                             <option value="theme">테마극장</option>
                                             <option value="etc">사복/기타</option>
+                                            <option value="eternal">영원살이</option>
+                                            <option value="annotation">주석</option>
                                         </select>
                                     </div>
                                     <div className="flex flex-col gap-1.5">

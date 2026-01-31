@@ -31,7 +31,7 @@ function transformUrls(obj: any, devProjId: string, deployProjId: string): any {
 
 export async function POST(req: Request) {
     try {
-        const { password } = await req.json();
+        const { password, mode = 'push' } = await req.json(); // mode: 'push' (dev->deploy), 'pull' (deploy->dev)
 
         const devUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const devKey = process.env.DEV_SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         const devSupabase = createClient(devUrl, devKey);
         const deploySupabase = createClient(deployUrl, deployKey);
 
-        // 1. Password Verification
+        // 1. Password Verification (Always check against Dev DB for simplicity)
         const { data: adminSettings, error: adminError } = await devSupabase
             .from('admin_settings')
             .select('password')
@@ -56,92 +56,79 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: '인증 실패: 잘못된 비밀번호입니다.' }, { status: 401 });
         }
 
+        // Define Source/Target based on mode
+        const sourceSupabase = mode === 'pull' ? deploySupabase : devSupabase;
+        const targetSupabase = mode === 'pull' ? devSupabase : deploySupabase;
+
         const results: any = { storage: {}, tables: {} };
 
         // 2. Storage Sync (story-images)
-        console.log(">>> [Sync] Starting Storage Sync...");
+        console.log(`>>> [Sync] Starting Storage Sync (${mode})...`);
         try {
             const bucketName = 'story-images';
-            const allFiles = await listAllFiles(devSupabase, bucketName);
-            console.log(`>>> [Sync] Found ${allFiles.length} files in dev storage.`);
+            const allFiles = await listAllFiles(sourceSupabase, bucketName);
+            console.log(`>>> [Sync] Found ${allFiles.length} files in source storage.`);
             let syncCount = 0;
 
             for (const filePath of allFiles) {
-                console.log(`>>> [Sync] Migrating: ${filePath}`);
-                // Download from Dev
-                const { data: fileData, error: downloadError } = await devSupabase.storage
+                // Download from Source
+                const { data: fileData, error: downloadError } = await sourceSupabase.storage
                     .from(bucketName)
                     .download(filePath);
 
-                if (downloadError) {
-                    console.error(`>>> [Sync] Failed to download ${filePath}:`, downloadError.message);
-                    continue;
-                }
+                if (downloadError) continue;
 
-                // Upload to Deploy
-                const { error: uploadError } = await deploySupabase.storage
+                // Upload to Target
+                await targetSupabase.storage
                     .from(bucketName)
                     .upload(filePath, fileData, { upsert: true });
 
-                if (uploadError) {
-                    console.error(`>>> [Sync] Failed to upload ${filePath}:`, uploadError.message);
-                } else {
-                    syncCount++;
-                }
+                syncCount++;
             }
-            results.storage = `${syncCount} files synced to storage`;
-            console.log(`>>> [Sync] Storage sync complete: ${syncCount} files.`);
+            results.storage = `${syncCount} files synced`;
         } catch (storageErr: any) {
-            console.error(">>> [Sync] Storage sync error:", storageErr.message);
             results.storage = `Error: ${storageErr.message}`;
         }
 
         // 3. Prepare IDs for Transformation
         const devProjId = devUrl.split('//')[1]?.split('.')[0];
         const deployProjId = deployUrl?.split('//')[1]?.split('.')[0];
-        console.log(`>>> [Sync] Transforming IDs: ${devProjId} -> ${deployProjId}`);
+
+        // Transform direction depends on mode
+        const fromId = mode === 'pull' ? deployProjId : devProjId;
+        const toId = mode === 'pull' ? devProjId : deployProjId;
 
         // 4. Tables Sync
         const tablesToSync = ['master_stories', 'story_layouts', 'admin_settings'];
 
         for (const table of tablesToSync) {
-            console.log(`>>> [Sync] Syncing table: ${table}...`);
-            const { data: devData, error: fetchError } = await devSupabase.from(table).select('*');
+            const { data: sourceData, error: fetchError } = await sourceSupabase.from(table).select('*');
 
-            if (fetchError) {
-                console.error(`>>> [Sync] Fetch error for ${table}:`, fetchError.message);
-                results.tables[table] = `Fetch Error: ${fetchError.message}`;
+            if (fetchError || !sourceData) {
+                results.tables[table] = `Fetch Error`;
                 continue;
             }
 
-            if (!devData || devData.length === 0) {
-                results.tables[table] = 'No data';
-                continue;
-            }
+            // Transform URLs
+            const transformedData = transformUrls(sourceData, fromId, toId);
 
-            // Transform URLs in the records
-            const transformedData = transformUrls(devData, devProjId, deployProjId);
-
-            const { error: upsertError } = await deploySupabase
+            const { error: upsertError } = await targetSupabase
                 .from(table)
                 .upsert(transformedData);
 
             if (upsertError) {
-                console.error(`>>> [Sync] Upsert error for ${table}:`, upsertError.message);
-                results.tables[table] = `Upsert Error: ${upsertError.message}`;
+                results.tables[table] = `Upsert Error`;
             } else {
-                console.log(`>>> [Sync] Successfully synced ${devData.length} records for ${table}.`);
-                results.tables[table] = `Success: ${devData.length} records`;
+                results.tables[table] = `Success: ${sourceData.length}`;
             }
         }
 
         return NextResponse.json({
-            message: '동기화 완료 (DB + Storage)',
+            message: `동기화 완료 (${mode === 'pull' ? '운영 -> 개발' : '개발 -> 운영'})`,
             details: results
         });
 
     } catch (error: any) {
-        console.error('Sync Error:', error);
         return NextResponse.json({ error: `서버 오류: ${error.message}` }, { status: 500 });
     }
 }

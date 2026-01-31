@@ -683,7 +683,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 <div className={`h-full group relative bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all ${node.data.watched ? 'opacity-30 grayscale-[0.8]' : 'hover:bg-slate-800/60 shadow-lg'} ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800' : ''} ${matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] border-yellow-400/50' : 'border-slate-800/40'}`}>
                                     <div className="flex items-center h-full">
                                         <div className="relative h-full aspect-square bg-black/20 shrink-0 flex items-center justify-center p-1 border-r border-slate-800/30">
-                                            <img src={getImageUrl(node.data.image)} alt={node.data.label} className="max-w-full max-h-full object-contain drop-shadow-2xl" />
+                                            <img src={getImageUrl(node.data.image)} alt={node.data.label} loading="lazy" className="max-w-full max-h-full object-contain drop-shadow-2xl" />
                                             {node.data.youtubeUrl && !node.data.watched && (
                                                 <div className="absolute inset-0 flex items-center justify-center bg-black/10">
                                                     <Play className="text-white/30 fill-white/10" size={18} />
@@ -964,6 +964,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             <img
                                 src={getImageUrl(selectedDetailNode.data.image)}
                                 alt={selectedDetailNode.data.label}
+                                loading="lazy"
                                 className="w-full h-auto max-h-[45vh] object-contain"
                             />
                         </div>

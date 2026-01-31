@@ -5,12 +5,12 @@ import { Handle, Position, NodeProps, NodeResizer } from 'reactflow';
 import { Youtube, User, Star, CheckCircle } from 'lucide-react';
 
 export interface StoryNodeData {
-    label: string;
-    type: 'main' | 'theme' | 'etc';
-    image: string;
+    label?: string;
+    type?: 'main' | 'theme' | 'etc' | 'eternal' | 'annotation';
+    image?: string;
     youtubeUrl?: string;
     protagonist?: string;
-    importance: number;
+    importance?: number;
     watched?: boolean;
     isAdmin?: boolean;
     highlighted?: boolean; // For search feature
@@ -21,6 +21,9 @@ export interface StoryNodeData {
     story_id?: string;
     m_x?: number;
     m_y?: number;
+    content?: string; // For annotations
+    onDelete?: (id: string) => void; // For annotations
+    onUpdate?: (id: string, content: string) => void; // For annotations
 }
 
 const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
@@ -43,6 +46,20 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             bg: 'bg-slate-800/80',
             text: 'text-white',
             badge: 'bg-slate-800 text-slate-100'
+        };
+        if (data.type === 'eternal') return {
+            border: 'border-amber-600',
+            ring: 'ring-amber-500/50',
+            bg: 'bg-slate-900/90',
+            text: 'text-amber-400',
+            badge: 'bg-amber-900/30 text-amber-200 border border-amber-500/30'
+        };
+        if (data.type === 'annotation') return {
+            border: 'border-orange-600',
+            ring: 'ring-orange-500/50',
+            bg: 'bg-slate-900/90',
+            text: 'text-orange-400',
+            badge: 'bg-orange-900/30 text-orange-200 border border-orange-500/30'
         };
         return {
             border: 'border-slate-700',
@@ -119,7 +136,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                             <img
                                 src={imgSrc}
                                 alt={data.label}
-                                loading="eager"
+                                loading="lazy"
                                 data-node-id={data.story_id}
                                 className={`w-full h-full block ${data.type === 'etc' ? 'object-contain' : 'object-cover'}`}
                                 onError={(e) => {
