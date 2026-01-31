@@ -26,6 +26,24 @@ export interface StoryNodeData {
     onUpdate?: (id: string, content: string) => void; // For annotations
 }
 
+const IMAGE_PROXY_URL = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '';
+
+// Helper to get proxied image URL via Cloudflare
+const getProxyUrl = (originalUrl: string) => {
+    if (!originalUrl || !IMAGE_PROXY_URL) return originalUrl;
+    // Only proxy Supabase Storage URLs
+    if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
+        try {
+            const url = new URL(originalUrl);
+            const path = url.pathname.replace('/storage/v1/object/public', '');
+            return `${IMAGE_PROXY_URL}${path}`;
+        } catch (e) {
+            return originalUrl;
+        }
+    }
+    return originalUrl;
+};
+
 const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
     const isWatched = data.watched && !data.isAdmin; // Only show watched state if not admin
     const isAdmin = data.isAdmin;
@@ -128,9 +146,13 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             <div className={`relative bg-slate-900 overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
                 {data.image ? (
                     (() => {
-                        const imgSrc = data.image.startsWith('http') || data.image.startsWith('data:')
-                            ? data.image
-                            : `${basePath}/images/${data.image}`;
+                        // 1. First, apply Cloudflare proxy if it's a Supabase URL
+                        const proxiedImage = getProxyUrl(data.image);
+
+                        // 2. Determine final source (Handle local path fallback)
+                        const imgSrc = proxiedImage.startsWith('http') || proxiedImage.startsWith('data:')
+                            ? proxiedImage
+                            : `${basePath}/images/${proxiedImage}`;
 
                         return (
                             <img
