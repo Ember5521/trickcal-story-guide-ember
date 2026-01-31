@@ -1,50 +1,47 @@
 export default {
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
-
-        // Example: https://worker.yourname.workers.dev/story-images/nodes/image.png
-        // Extract bucket and path
-        const path = url.pathname; // includes leading slash
+        const path = url.pathname;
 
         if (path === '/' || path === '/favicon.ico') {
             return new Response('Supabase Storage Proxy', { status: 200 });
         }
 
-        // Configure your Supabase project ID here or via environment variables
-        const SUPABASE_PROJECT_ID = env.SUPABASE_PROJECT_ID || 'rjnqevwqczktuyijhrmt';
-        const SUPABASE_URL = `https://${SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public${path}`;
+        const DEV_PROJECT_ID = 'rjnqevwqczktuyijhrmt';
+        const PROD_PROJECT_ID = 'kbhohauajgmucxiilywk';
 
-        // Cloudflare Cache API
+        const parts = path.split('/').filter(Boolean);
+        let projectID = PROD_PROJECT_ID;
+        let supabasePath = path;
+
+        if (parts.length > 0 && (parts[0] === DEV_PROJECT_ID || parts[0] === PROD_PROJECT_ID || parts[0].length === 20)) {
+            projectID = parts[0];
+            supabasePath = '/' + parts.slice(1).join('/');
+        } else {
+            const referrer = request.headers.get('referer') || '';
+            if (referrer.includes('localhost') || referrer.includes('127.0.0.1')) {
+                projectID = DEV_PROJECT_ID;
+            }
+        }
+
+        const SUPABASE_URL = `https://${projectID}.supabase.co/storage/v1/object/public${supabasePath}`;
+
         const cache = caches.default;
         let response = await cache.match(request);
 
         if (!response) {
-            console.log(`Cache miss for ${path}. Fetching from Supabase...`);
-
             const originalResponse = await fetch(SUPABASE_URL, {
-                headers: {
-                    'User-Agent': 'Cloudflare Worker Proxy',
-                },
+                headers: { 'User-Agent': 'Cloudflare Worker Proxy' },
             });
 
-            if (!originalResponse.ok) {
-                return originalResponse;
-            }
+            if (!originalResponse.ok) return originalResponse;
 
-            // Create a new response to add cache headers
             response = new Response(originalResponse.body, originalResponse);
-
-            // Set Cache-Control headers for long-term caching
-            // public: cacheable by anyone
-            // max-age: 1 year (31536000 seconds)
-            // immutable: if URL is same, content never changes
             response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-            response.headers.set('Vary', 'Accept');
+            response.headers.set('Access-Control-Allow-Origin', '*'); // CORS 허용
+            response.headers.set('x-debug-project', projectID); // 디버깅용
 
-            // Store in Cloudflare cache
             ctx.waitUntil(cache.put(request, response.clone()));
-        } else {
-            console.log(`Cache hit for ${path}.`);
         }
 
         return response;

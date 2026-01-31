@@ -49,8 +49,13 @@ const getProxyUrl = (originalUrl: string) => {
     if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
         try {
             const url = new URL(originalUrl);
+            const projId = url.hostname.split('.')[0];
             const path = url.pathname.replace('/storage/v1/object/public', '');
-            return `${IMAGE_PROXY_URL}${path}`;
+            // Ensure single leading slash for path
+            const cleanPath = path.startsWith('/') ? path : '/' + path;
+            // Remove trailing slash from proxy URL if present
+            const cleanProxyBase = IMAGE_PROXY_URL.endsWith('/') ? IMAGE_PROXY_URL.slice(0, -1) : IMAGE_PROXY_URL;
+            return `${cleanProxyBase}/${projId}${cleanPath}`;
         } catch (e) {
             return originalUrl;
         }
@@ -76,7 +81,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [edges, setEdges] = useState<Edge[]>(initialEdges);
     const [isAdmin, setIsAdmin] = useState(false);
     const [season, setSeason] = useState(1);
-    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>('recommended');
+    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>('release');
     const [isLoaded, setIsLoaded] = useState(false);
 
     // UI State
@@ -1185,8 +1190,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 <p className="text-xs leading-relaxed text-slate-300">
                                     <b>가이드 안내</b><br />
                                     • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
-                                    • 추천 순서: 극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 권장하는 진행 순서입니다.<br />
                                     • 출시 순서: Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.<br />
+                                    • 추천 순서: 극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 추천하는 진행 순서입니다.<br />
                                     • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                                 </p>
                             </div>
@@ -1295,8 +1300,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         onChange={(e) => setViewType(e.target.value as any)}
                         className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
                     >
-                        <option value="recommended" className="bg-slate-900">추천 순서</option>
                         <option value="release" className="bg-slate-900">출시 순서</option>
+                        <option value="recommended" className="bg-slate-900">추천 순서</option>
                     </select>
                     <select
                         value={season}
@@ -1343,11 +1348,17 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             {
                 isPlayingVideoId && (
                     <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
-                        <div className="fixed top-8 right-8 z-[220] flex gap-4">
-                            <button onClick={() => setIsModalFullscreen(!isModalFullscreen)} className="bg-white/10 p-3 rounded-xl border border-white/20 text-white">
+                        <div className="fixed top-20 right-10 z-[220] flex gap-4">
+                            <button
+                                onClick={() => setIsModalFullscreen(!isModalFullscreen)}
+                                className="bg-white/5 hover:bg-white/10 p-3 rounded-2xl border border-white/5 text-white/40 hover:text-white transition-all backdrop-blur-md"
+                            >
                                 {isModalFullscreen ? <Minimize2 size={24} /> : <Maximize2 size={24} />}
                             </button>
-                            <button onClick={() => (setPlayingVideoId(null), setIsModalFullscreen(false))} className="bg-rose-600/80 p-3 rounded-xl border border-rose-400/30 text-white">
+                            <button
+                                onClick={() => (setPlayingVideoId(null), setIsModalFullscreen(false))}
+                                className="bg-rose-500/10 hover:bg-rose-500/30 p-3 rounded-2xl border border-rose-500/10 text-rose-500/40 hover:text-rose-500 transition-all backdrop-blur-md"
+                            >
                                 <X size={24} />
                             </button>
                         </div>
@@ -1688,8 +1699,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     </>
                                 )}
 
-                                {/* Conditional Fields: THEME */}
-                                {formData.type === 'theme' && (
+                                {/* Conditional Fields: THEME or ETERNAL */}
+                                {(formData.type === 'theme' || formData.type === 'eternal') && (
                                     <>
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">주요 등장인물</label>

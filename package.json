@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.18",
-    "@supabase/supabase-js": "latest",
     "canvas-confetti": "latest",
     "clsx": "latest",
     "lucide-react": "latest",
@@ -21,12 +20,15 @@
     "tailwind-merge": "latest"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.93.3",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "autoprefixer": "latest",
+    "dotenv": "^17.2.3",
     "postcss": "latest",
     "tailwindcss": "latest",
+    "tsx": "^4.21.0",
     "typescript": "latest"
   }
 }

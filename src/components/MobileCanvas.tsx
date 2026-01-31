@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -22,8 +22,11 @@ const getProxyUrl = (originalUrl: string) => {
     if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
         try {
             const url = new URL(originalUrl);
+            const projId = url.hostname.split('.')[0];
             const path = url.pathname.replace('/storage/v1/object/public', '');
-            return `${IMAGE_PROXY_URL}${path}`;
+            const cleanPath = path.startsWith('/') ? path : '/' + path;
+            const cleanProxyBase = IMAGE_PROXY_URL.endsWith('/') ? IMAGE_PROXY_URL.slice(0, -1) : IMAGE_PROXY_URL;
+            return `${cleanProxyBase}/${projId}${cleanPath}`;
         } catch (e) {
             return originalUrl;
         }
@@ -33,7 +36,7 @@ const getProxyUrl = (originalUrl: string) => {
 
 interface StoryNodeData {
     label: string;
-    type: 'main' | 'theme' | 'etc';
+    type: 'main' | 'theme' | 'etc' | 'eternal';
     image: string;
     youtubeUrl: string;
     protagonist?: string;
@@ -57,11 +60,11 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [nodes, setNodes] = useState<Node[]>([]);
     const [edges, setEdges] = useState<any[]>([]);
     const [season, setSeason] = useState(1);
-    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>('recommended');
+    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>('release');
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
-    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc'>('main');
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal'>('main');
     const [searchQuery, setSearchQuery] = useState('');
     const [showInfo, setShowInfo] = useState(false);
     const [showMemo, setShowMemo] = useState(false);
@@ -620,8 +623,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             onChange={(e) => setViewType(e.target.value as any)}
                             className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-100 outline-none cursor-pointer transition-all active:bg-slate-700"
                         >
-                            <option value="recommended" className="bg-slate-900">추천 순서</option>
                             <option value="release" className="bg-slate-900">출시 순서</option>
+                            <option value="recommended" className="bg-slate-900">추천 순서</option>
                         </select>
                         <select
                             value={season}
@@ -703,6 +706,11 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     <div className="flex items-center h-full">
                                         <div className="relative h-full aspect-square bg-black/20 shrink-0 flex items-center justify-center p-1 border-r border-slate-800/30">
                                             <img src={getImageUrl(node.data.image)} alt={node.data.label} loading="lazy" className="max-w-full max-h-full object-contain drop-shadow-2xl" />
+                                            {node.data.type === 'eternal' && (
+                                                <div className="absolute top-1 left-1 z-10 bg-emerald-500/80 rounded-full p-0.5 shadow-[0_0_5px_rgba(16,185,129,0.5)]">
+                                                    <Sprout size={10} className="text-white" />
+                                                </div>
+                                            )}
                                             {node.data.youtubeUrl && !node.data.watched && (
                                                 <div className="absolute inset-0 flex items-center justify-center bg-black/10">
                                                     <Play className="text-white/30 fill-white/10" size={18} />
@@ -713,8 +721,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <div className="flex-1 px-2.5 min-w-0 flex flex-col justify-center gap-1">
                                             {/* Top Row: Type & Video Indicator */}
                                             <div className="flex items-center gap-1.5">
-                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-500/20 text-slate-400'}`}>
-                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : 'ETC'}
+                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'eternal' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>
+                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'eternal' ? 'ETERNAL' : 'ETC'}
                                                 </span>
                                                 {node.data.youtubeUrl && (
                                                     <Youtube size={10} className="text-rose-500/60" />
@@ -814,6 +822,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <option value="main">Main</option>
                                         <option value="theme">Theme</option>
                                         <option value="etc">ETC</option>
+                                        <option value="eternal">영원살이</option>
                                     </select>
                                 </div>
                                 <div className="w-24">
@@ -832,6 +841,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     </label>
                                 </div>
                             </div>
+                            {(formData.type === 'theme' || formData.type === 'eternal') && (
+                                <div>
+                                    <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">Protagonist</label>
+                                    <input type="text" value={formData.protagonist || ''} onChange={e => setFormData({ ...formData, protagonist: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="에르핀, 네르 등" />
+                                </div>
+                            )}
+
                             <div>
                                 <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">YouTube link</label>
                                 <input type="text" value={formData.youtubeUrl} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-xs font-mono outline-none" placeholder="https://youtube.com/..." />
@@ -974,8 +990,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     <div className="w-full max-w-lg flex flex-col items-center px-6 my-auto animate-in zoom-in-95 duration-300">
                         {/* Status Badge Above Image */}
                         <div className="mb-4">
-                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' ? 'bg-purple-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
-                                {selectedDetailNode.data.type}
+                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'eternal' ? 'bg-emerald-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
+                                {selectedDetailNode.data.type === 'eternal' ? 'ETERNAL' : selectedDetailNode.data.type}
                             </span>
                         </div>
                         {/* Poster Box - Original Aspect Ratio */}
@@ -1008,7 +1024,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         className="flex items-center justify-center gap-3 w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-rose-900/40 transition-all active:scale-95 border border-rose-400/30"
                                     >
                                         <Youtube size={20} />
-                                        <span>{selectedDetailNode.data.type === 'theme' ? 'PV 시청하기' : 'YOUTUBE 시청하기'}</span>
+                                        <span>{selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'eternal' ? 'PV 시청하기' : 'YOUTUBE 시청하기'}</span>
                                     </button>
                                 </div>
                             )}
@@ -1043,7 +1059,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         </div>
 
                         <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
-                            {(['main', 'theme', 'etc'] as const).map((cat) => (
+                            {(['main', 'theme', 'etc', 'eternal'] as const).map((cat) => (
                                 <button
                                     key={cat}
                                     onClick={() => setLibraryCategory(cat)}
@@ -1052,7 +1068,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         : 'text-slate-500 hover:text-slate-300'
                                         }`}
                                 >
-                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : 'ETC'}
+                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : cat === 'eternal' ? 'Eternal' : 'ETC'}
                                 </button>
                             ))}
                         </div>

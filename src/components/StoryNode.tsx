@@ -2,7 +2,7 @@
 
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps, NodeResizer } from 'reactflow';
-import { Youtube, User, Star, CheckCircle } from 'lucide-react';
+import { Youtube, User, Star, CheckCircle, Sprout } from 'lucide-react';
 
 export interface StoryNodeData {
     label?: string;
@@ -35,8 +35,11 @@ const getProxyUrl = (originalUrl: string) => {
     if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
         try {
             const url = new URL(originalUrl);
+            const projId = url.hostname.split('.')[0];
             const path = url.pathname.replace('/storage/v1/object/public', '');
-            return `${IMAGE_PROXY_URL}${path}`;
+            const cleanPath = path.startsWith('/') ? path : '/' + path;
+            const cleanProxyBase = IMAGE_PROXY_URL.endsWith('/') ? IMAGE_PROXY_URL.slice(0, -1) : IMAGE_PROXY_URL;
+            return `${cleanProxyBase}/${projId}${cleanPath}`;
         } catch (e) {
             return originalUrl;
         }
@@ -66,11 +69,11 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             badge: 'bg-slate-800 text-slate-100'
         };
         if (data.type === 'eternal') return {
-            border: 'border-amber-600',
-            ring: 'ring-amber-500/50',
-            bg: 'bg-slate-900/90',
-            text: 'text-amber-400',
-            badge: 'bg-amber-900/30 text-amber-200 border border-amber-500/30'
+            border: 'border-emerald-600',
+            ring: 'ring-emerald-500/50',
+            bg: 'bg-slate-950/90',
+            text: 'text-emerald-300',
+            badge: 'bg-emerald-900/40 text-emerald-100 border border-emerald-500/30'
         };
         if (data.type === 'annotation') return {
             border: 'border-orange-600',
@@ -119,7 +122,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
     return (
         <div className={`
       relative transition-all duration-500 w-full h-full flex flex-col
-      rounded-2xl bg-slate-900 border-[6px] ${theme.border}
+      rounded-2xl ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} border-[6px] ${theme.border}
       ${selected ? `ring-8 ${theme.ring} scale-[1.03] z-10` : isHighlighted ? 'ring-[12px] ring-amber-400 ring-offset-8 ring-offset-slate-900 scale-[1.05] z-30 shadow-[0_0_50px_rgba(251,191,36,0.6)]' : 'shadow-lg shadow-black/40'}
       ${isWatched ? 'grayscale opacity-60' : ''}
     `}>
@@ -143,7 +146,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             {renderHandles('right', Position.Right)}
 
             {/* Image Header wrapper with Split Indicator */}
-            <div className={`relative bg-slate-900 overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
+            <div className={`relative ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
                 {data.image ? (
                     (() => {
                         // 1. First, apply Cloudflare proxy if it's a Supabase URL
@@ -185,6 +188,15 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                     }} />
                 )}
 
+                {/* Sprout Icon for Eternal Type */}
+                {data.type === 'eternal' && (
+                    <div className="absolute top-2 left-2 z-30 drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]">
+                        <div className="bg-emerald-500/20 backdrop-blur-md p-1.5 rounded-full border border-emerald-500/30">
+                            <Sprout size={24} className="text-emerald-400" />
+                        </div>
+                    </div>
+                )}
+
                 {/* Watched Overlay Icon - Only in User Mode */}
                 {isWatched && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] z-20">
@@ -195,7 +207,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
 
             {/* Content 영역 */}
             {hasContent && (
-                <div className={`p-2 flex flex-col gap-2 shrink-0 bg-slate-800/50 backdrop-blur-sm border-t border-slate-800`}>
+                <div className={`p-2 flex flex-col gap-2 shrink-0 ${data.type === 'eternal' ? 'bg-[#0a3a2a] border-emerald-500/30' : 'bg-slate-800/50 border-slate-800'} backdrop-blur-md border-t`}>
                     {showTitle && (
                         <h3 className={`font-bold text-base leading-tight text-center ${theme.text}`}>{data.label}</h3>
                     )}
@@ -219,7 +231,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                         `}
                         >
                             <Youtube size={24} />
-                            <span>{data.type === 'etc' ? '시청하기' : 'PV 시청하기'}</span>
+                            <span>{data.type === 'etc' || data.type === 'eternal' ? '시청하기' : 'PV 시청하기'}</span>
                         </button>
                     )}
                 </div>

@@ -32,8 +32,9 @@ function transformUrls(obj: any, devProjId: string, deployProjId: string): any {
     // 2. Wrap Supabase storage URLs with Cloudflare proxy if configured
     if (proxyUrl) {
         // Find public storage URLs and transform them to proxied versions
+        // Format: https://proxy-url.workers.dev/PROJECT_ID/path/to/image
         const storageRegex = new RegExp(`https://${deployProjId}\\.supabase\\.co/storage/v1/object/public/([^"\\s]+)`, 'g');
-        str = str.replace(storageRegex, `${proxyUrl}/$1`);
+        str = str.replace(storageRegex, `${proxyUrl}/${deployProjId}/$1`);
     }
 
     return JSON.parse(str);
@@ -72,15 +73,26 @@ export async function POST(req: Request) {
 
         const results: any = { storage: {}, tables: {} };
 
-        // 2. Storage Sync (story-images)
+        // 2. Storage Sync (story-images) - Efficient version
         console.log(`>>> [Sync] Starting Storage Sync (${mode})...`);
         try {
             const bucketName = 'story-images';
-            const allFiles = await listAllFiles(sourceSupabase, bucketName);
-            console.log(`>>> [Sync] Found ${allFiles.length} files in source storage.`);
-            let syncCount = 0;
+            const sourceFiles = await listAllFiles(sourceSupabase, bucketName);
+            const targetFiles = await listAllFiles(targetSupabase, bucketName);
+            const targetFileSet = new Set(targetFiles);
 
-            for (const filePath of allFiles) {
+            console.log(`>>> [Sync] Found ${sourceFiles.length} files in source, ${targetFiles.length} in target.`);
+
+            let syncCount = 0;
+            let skipCount = 0;
+
+            for (const filePath of sourceFiles) {
+                // Skip if already exists on target
+                if (targetFileSet.has(filePath)) {
+                    skipCount++;
+                    continue;
+                }
+
                 // Download from Source
                 const { data: fileData, error: downloadError } = await sourceSupabase.storage
                     .from(bucketName)
@@ -95,7 +107,7 @@ export async function POST(req: Request) {
 
                 syncCount++;
             }
-            results.storage = `${syncCount} files synced`;
+            results.storage = `${syncCount} files synced, ${skipCount} skipped (already exists)`;
         } catch (storageErr: any) {
             results.storage = `Error: ${storageErr.message}`;
         }
@@ -108,14 +120,37 @@ export async function POST(req: Request) {
         const fromId = mode === 'pull' ? deployProjId : devProjId;
         const toId = mode === 'pull' ? devProjId : deployProjId;
 
-        // 4. Tables Sync
+        // 4. Get last sync time from Target
+        const { data: targetAdmin } = await targetSupabase
+            .from('admin_settings')
+            .select('last_synced_at')
+            .eq('id', 1)
+            .single();
+
+        const lastSyncedAt = targetAdmin?.last_synced_at;
+        console.log(`>>> [Sync] Last synced at: ${lastSyncedAt || 'Never'}`);
+
+        // 5. Tables Sync
         const tablesToSync = ['master_stories', 'story_layouts', 'admin_settings'];
 
         for (const table of tablesToSync) {
-            const { data: sourceData, error: fetchError } = await sourceSupabase.from(table).select('*');
+            let query = sourceSupabase.from(table).select('*');
+
+            // Apply incremental filter if lastSyncedAt exists and table has updated_at
+            // (admin_settings doesn't have updated_at, we sync it fully as it's small)
+            if (lastSyncedAt && table !== 'admin_settings') {
+                query = query.gt('updated_at', lastSyncedAt);
+            }
+
+            const { data: sourceData, error: fetchError } = await query;
 
             if (fetchError || !sourceData) {
-                results.tables[table] = `Fetch Error`;
+                results.tables[table] = `Fetch Error or No changes`;
+                continue;
+            }
+
+            if (sourceData.length === 0) {
+                results.tables[table] = `Up to date (0 changes)`;
                 continue;
             }
 
@@ -127,11 +162,17 @@ export async function POST(req: Request) {
                 .upsert(transformedData);
 
             if (upsertError) {
-                results.tables[table] = `Upsert Error`;
+                results.tables[table] = `Upsert Error: ${upsertError.message}`;
             } else {
-                results.tables[table] = `Success: ${sourceData.length}`;
+                results.tables[table] = `Synced: ${sourceData.length} records`;
             }
         }
+
+        // 6. Update last_synced_at on Target
+        await targetSupabase
+            .from('admin_settings')
+            .update({ last_synced_at: new Date().toISOString() })
+            .eq('id', 1);
 
         return NextResponse.json({
             message: `동기화 완료 (${mode === 'pull' ? '운영 -> 개발' : '개발 -> 운영'})`,
