@@ -34,3 +34,6 @@ next-env.d.ts
 
 # database setup
 *.sql
+
+# utility scripts
+/scripts/
