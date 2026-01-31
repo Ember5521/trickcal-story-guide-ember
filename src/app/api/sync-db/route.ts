@@ -22,11 +22,21 @@ async function listAllFiles(supabase: SupabaseClient, bucketName: string, path: 
 // URL Transformation Logic helper
 function transformUrls(obj: any, devProjId: string, deployProjId: string): any {
     if (!obj || !devProjId || !deployProjId) return obj;
-    const str = JSON.stringify(obj);
-    // Replace project IDs in public URLs using regex for wider compatibility (replaceAll is ES2021+)
+    const proxyUrl = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '';
+    let str = JSON.stringify(obj);
+
+    // 1. Replace project IDs in public URLs
     const regex = new RegExp(devProjId, 'g');
-    const transformed = str.replace(regex, deployProjId);
-    return JSON.parse(transformed);
+    str = str.replace(regex, deployProjId);
+
+    // 2. Wrap Supabase storage URLs with Cloudflare proxy if configured
+    if (proxyUrl) {
+        // Find public storage URLs and transform them to proxied versions
+        const storageRegex = new RegExp(`https://${deployProjId}\\.supabase\\.co/storage/v1/object/public/([^"\\s]+)`, 'g');
+        str = str.replace(storageRegex, `${proxyUrl}/$1`);
+    }
+
+    return JSON.parse(str);
 }
 
 export async function POST(req: Request) {

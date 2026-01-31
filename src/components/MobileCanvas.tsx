@@ -11,7 +11,25 @@ import { supabase } from '../lib/supabase';
 const isProd = process.env.NODE_ENV === 'production';
 const repoName = 'trickcal-story-guide-ember';
 const basePath = isProd ? `/${repoName}` : '';
+const isDbConfigured = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const TABLE_NAME = process.env.NEXT_PUBLIC_STORY_TABLE_NAME || 'story_data';
+const IMAGE_PROXY_URL = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '';
+
+// Helper to get proxied image URL via Cloudflare
+const getProxyUrl = (originalUrl: string) => {
+    if (!originalUrl || !IMAGE_PROXY_URL) return originalUrl;
+    // Only proxy Supabase Storage URLs
+    if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
+        try {
+            const url = new URL(originalUrl);
+            const path = url.pathname.replace('/storage/v1/object/public', '');
+            return `${IMAGE_PROXY_URL}${path}`;
+        } catch (e) {
+            return originalUrl;
+        }
+    }
+    return originalUrl;
+};
 
 interface StoryNodeData {
     label: string;
@@ -141,7 +159,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         story_id: ln.story_id,
                                         m_x: ln.m_x,
                                         m_y: ln.m_y,
-                                        watched: !!hist[ln.id]
+                                        watched: !!hist[ln.id],
+                                        image: getProxyUrl(masterData.image)
                                     }
                                 } as Node;
                             });
@@ -362,7 +381,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             data: {
                 label: m.label,
                 type: m.type,
-                image: m.image,
+                image: getProxyUrl(m.image),
                 youtubeUrl: m.youtube_url,
                 protagonist: m.protagonist,
                 importance: m.importance,

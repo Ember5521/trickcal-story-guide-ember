@@ -40,6 +40,23 @@ const nodeTypes = {
 const initialNodes: Node<StoryNodeData>[] = [];
 const initialEdges: Edge[] = [];
 const TABLE_NAME = process.env.NEXT_PUBLIC_STORY_TABLE_NAME || 'story_data';
+const IMAGE_PROXY_URL = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '';
+
+// Helper to get proxied image URL via Cloudflare
+const getProxyUrl = (originalUrl: string) => {
+    if (!originalUrl || !IMAGE_PROXY_URL) return originalUrl;
+    // Only proxy Supabase Storage URLs
+    if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
+        try {
+            const url = new URL(originalUrl);
+            const path = url.pathname.replace('/storage/v1/object/public', '');
+            return `${IMAGE_PROXY_URL}${path}`;
+        } catch (e) {
+            return originalUrl;
+        }
+    }
+    return originalUrl;
+};
 
 // Zoom Scale Constants (Internal 0.55 = Display 1.0 for slightly more zoomed-out view)
 const SCALE_OUTER = 0.55; // Increased from 0.5 to make view slightly larger at 100%
@@ -581,7 +598,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         watched: !!hist[ln.id],
                                         isAdmin,
                                         onDelete: handleDeleteAnnotation,
-                                        onUpdate: handleUpdateAnnotation
+                                        onUpdate: handleUpdateAnnotation,
+                                        image: getProxyUrl(masterData.image)
                                     }
                                 } as Node<StoryNodeData>;
                             });
@@ -1636,6 +1654,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                     onChange={e => setFormData({ ...formData, image: e.target.value })}
                                                     className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500/50 text-[10px] font-mono pr-12 text-slate-400"
                                                     placeholder="파일명 또는 데이터 URL"
+                                                    onBlur={() => setFormData(prev => ({ ...prev, image: getProxyUrl(prev.image || '') }))}
                                                 />
                                                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-600 uppercase">Path</span>
                                             </div>
