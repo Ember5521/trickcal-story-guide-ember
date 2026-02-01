@@ -8,7 +8,7 @@ import {
     Image as ImageIcon, Shield, Library, TriangleAlert
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import AnnotationNode from './AnnotationNode';
+import CurationNode from '@/components/CurationNode';
 import ReactFlow, {
     Background,
     applyEdgeChanges,
@@ -34,7 +34,7 @@ import StoryNode, { StoryNodeData } from './StoryNode';
 
 const nodeTypes = {
     storyNode: StoryNode,
-    annotationNode: AnnotationNode,
+    annotationNode: CurationNode,
 };
 
 const initialNodes: Node<StoryNodeData>[] = [];
@@ -553,11 +553,12 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         type: 'annotationNode',
                                         position: { x: ln.x || 0, y: ln.y || 0 },
                                         data: {
+                                            type: 'annotation',
                                             content: ln.content,
                                             isAdmin,
                                             onDelete: handleDeleteAnnotation,
                                             onUpdate: handleUpdateAnnotation
-                                        }
+                                        } as StoryNodeData
                                     } as Node<StoryNodeData>;
                                 }
 
@@ -686,18 +687,19 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, content } } : n));
     }, []);
 
-    const handleAddAnnotation = useCallback(() => {
+    const handleAddCuration = useCallback(() => {
         const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
         const newNode = {
-            id: `ann_${Date.now()}`,
+            id: `cur_${Date.now()}`,
             type: 'annotationNode',
-            position: { x: center.x - 24, y: center.y - 24 },
+            position: { x: center.x - 40, y: center.y - 40 },
             data: {
-                content: '새 주석입니다. 클릭하여 수정하세요.',
+                type: 'annotation',
+                content: '여기에 배치 이유(큐레이션)를 입력하세요.',
                 isAdmin: true,
                 onDelete: handleDeleteAnnotation,
                 onUpdate: handleUpdateAnnotation
-            }
+            } as StoryNodeData
         };
         setNodes(nds => [...nds, newNode]);
     }, [screenToFlowPosition, handleDeleteAnnotation, handleUpdateAnnotation]);
@@ -912,6 +914,23 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         saveLocal(nodes, up);
     }, [nodes, edges, edgeType, saveLocal]);
 
+    const onNodeClick = useCallback((event: React.MouseEvent, node: Node<StoryNodeData>) => {
+        if (!isAdmin) return;
+        setEditingNodeId(node.id);
+        setFormData({
+            label: node.data.label || '',
+            type: node.data.type || 'main',
+            image: node.data.image || '',
+            youtubeUrl: node.data.youtubeUrl || '',
+            protagonist: node.data.protagonist || '',
+            importance: node.data.importance || 1,
+            splitType: node.data.splitType || 'none',
+            partLabel: node.data.partLabel || '',
+            content: node.data.content || '',
+            story_id: node.data.story_id
+        });
+        setShowForm(true);
+    }, [isAdmin]);
     const onEdgeClick = useCallback((ev: React.MouseEvent, e: Edge) => {
         if (!isAdmin) return;
         // ev.stopPropagation(); // Fixed: Allow selection for deletion
@@ -945,10 +964,21 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     }, [isAdmin, nodes, saveLocal]);
 
     // Admin Form Node Logic
-    const [formData, setFormData] = useState<StoryNodeData>({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1, splitType: 'none' });
+    const [formData, setFormData] = useState<StoryNodeData>({
+        label: '',
+        type: 'main',
+        image: '',
+        youtubeUrl: '',
+        protagonist: '',
+        importance: 1,
+        splitType: 'none',
+        partLabel: '',
+        content: ''
+    });
 
     const handleSaveNode = async () => {
-        if (!formData.label) { alert("제목 입력!"); return; }
+        // Skip title check for Curation (annotation)
+        if (formData.type !== 'annotation' && !formData.label) { alert("제목 입력!"); return; }
         if (!supabase || !sessionPassword.current) return;
 
         const getDimensions = () => {
@@ -962,35 +992,38 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         try {
             let storyId = (formData as any).story_id;
 
-            if (editingNodeId && storyId) {
-                // Update existing master story
-                await supabase.rpc('update_master_story', {
-                    p_id: storyId,
-                    p_label: formData.label,
-                    p_type: formData.type,
-                    p_image: formData.image,
-                    p_youtube_url: formData.youtubeUrl || '',
-                    p_protagonist: formData.protagonist || '',
-                    p_part_label: formData.partLabel || '',
-                    p_importance: formData.importance || 1,
-                    p_password: sessionPassword.current,
-                    p_split_type: formData.splitType || 'none'
-                });
-            } else {
-                // Create new master story
-                const { data: newId, error } = await supabase.rpc('create_master_story', {
-                    p_label: formData.label,
-                    p_type: formData.type,
-                    p_image: formData.image,
-                    p_youtube_url: formData.youtubeUrl || '',
-                    p_protagonist: formData.protagonist || '',
-                    p_part_label: formData.partLabel || '',
-                    p_importance: formData.importance || 1,
-                    p_password: sessionPassword.current,
-                    p_split_type: formData.splitType || 'none'
-                });
-                if (error || !newId) throw new Error("Master story creation failed");
-                storyId = newId;
+            // Skip master story creation/update for 'annotation' type (Curation)
+            if (formData.type !== 'annotation') {
+                if (editingNodeId && storyId) {
+                    // Update existing master story
+                    await supabase.rpc('update_master_story', {
+                        p_id: storyId,
+                        p_label: formData.label,
+                        p_type: formData.type,
+                        p_image: formData.image,
+                        p_youtube_url: formData.youtubeUrl || '',
+                        p_protagonist: formData.protagonist || '',
+                        p_part_label: formData.partLabel || '',
+                        p_importance: formData.importance || 1,
+                        p_password: sessionPassword.current,
+                        p_split_type: formData.splitType || 'none'
+                    });
+                } else {
+                    // Create new master story
+                    const { data: newId, error } = await supabase.rpc('create_master_story', {
+                        p_label: formData.label,
+                        p_type: formData.type,
+                        p_image: formData.image,
+                        p_youtube_url: formData.youtubeUrl || '',
+                        p_protagonist: formData.protagonist || '',
+                        p_part_label: formData.partLabel || '',
+                        p_importance: formData.importance || 1,
+                        p_password: sessionPassword.current,
+                        p_split_type: formData.splitType || 'none'
+                    });
+                    if (error || !newId) throw new Error("Master story creation failed");
+                    storyId = newId;
+                }
             }
 
             if (editingNodeId) {
@@ -1010,7 +1043,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     id: `n_${Date.now()}`,
                     position: { x: center.x - w / 2, y: center.y - h / 2 },
                     data: { ...formData, story_id: storyId, watched: false, isAdmin } as StoryNodeData,
-                    type: 'storyNode', width: w, height: h,
+                    type: formData.type === 'annotation' ? 'annotationNode' : 'storyNode',
+                    width: w, height: h,
                     style: { width: w, height: h }
                 };
                 const up = [...nodes, newNode];
@@ -1208,62 +1242,15 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
                     <div className="flex items-center gap-2">
                         {isAdmin && (
-                            <>
-                                <button
-                                    onClick={handleAddAnnotation}
-                                    className="p-3 md:p-4 bg-amber-600 hover:bg-amber-500 text-white rounded-2xl border-2 border-amber-400 shadow-xl shadow-amber-500/30 transition-all flex items-center gap-3 active:scale-95 group"
-                                    title="주석 추가"
-                                >
-                                    <TriangleAlert size={24} className="group-hover:rotate-12 transition-transform" />
-                                    <span className="hidden lg:inline text-sm font-black uppercase tracking-tight">주석 추가</span>
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        fetchMasterStories();
-                                        setShowMasterLibrary(true);
-                                    }}
-                                    className="p-2 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-xl border border-slate-700 transition-all"
-                                    title="마스터 도서관"
-                                >
-                                    <Library size={18} />
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setEditingNodeId(null);
-                                        setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1, splitType: 'none' });
-                                        setShowForm(true);
-                                    }}
-                                    className="p-2 bg-slate-800 hover:bg-slate-700 text-green-400 rounded-xl border border-slate-700 transition-all"
-                                    title="새 노드 생성"
-                                >
-                                    <Plus size={18} />
-                                </button>
-                                <button
-                                    onClick={handlePullFromDeploy}
-                                    disabled={isSyncing}
-                                    className={`p-2 rounded-xl border transition-all flex items-center gap-2 ${isSyncing ? 'bg-slate-800 text-slate-500' : 'bg-slate-800 hover:bg-slate-700 text-blue-400 border-slate-700'}`}
-                                    title="운영 서버에서 데이터 가져오기"
-                                >
-                                    <RotateCcw size={18} className={isSyncing ? 'animate-spin' : ''} />
-                                    <span className="hidden lg:inline text-xs font-bold">{isSyncing ? '가져오는 중...' : '배포에서 가져오기'}</span>
-                                </button>
-                                <button
-                                    onClick={handleSyncToDeploy}
-                                    disabled={isSyncing}
-                                    className={`p-2 rounded-xl border transition-all flex items-center gap-2 ${isSyncing ? 'bg-slate-800 text-slate-500' : 'bg-slate-800 hover:bg-slate-700 text-rose-400 border-slate-700'}`}
-                                    title="운영 서버로 동기화"
-                                >
-                                    <RotateCcw size={18} className={isSyncing ? 'animate-spin' : ''} />
-                                    <span className="hidden lg:inline text-xs font-bold">{isSyncing ? '동기화 중...' : '배포 동기화'}</span>
-                                </button>
-                            </>
+                            <button
+                                onClick={handleAddCuration}
+                                className="p-2 bg-amber-600/80 hover:bg-amber-600 text-white rounded-xl border border-amber-400/30 shadow-sm shadow-amber-500/10 transition-all flex items-center gap-2 active:scale-95 group"
+                                title="큐레이션 추가"
+                            >
+                                <TriangleAlert size={18} className="group-hover:rotate-12 transition-transform" />
+                                <span className="hidden lg:inline text-[11px] font-black uppercase tracking-tight">큐레이션 추가</span>
+                            </button>
                         )}
-                        <button
-                            onClick={toggleAdmin}
-                            className={`p-2.5 rounded-xl border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20' : 'bg-transparent border-none text-slate-800 opacity-[0.05] hover:opacity-50'}`}
-                        >
-                            <Shield size={18} />
-                        </button>
                     </div>
                 </div>
 
@@ -1323,7 +1310,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     onNodesDelete={onNodesDelete}
                     onConnect={onConnect} onEdgeClick={onEdgeClick} onEdgeDoubleClick={onEdgeDoubleClick}
                     nodeTypes={nodeTypes}
-                    onNodeClick={(e, node) => isAdmin ? (setEditingNodeId(node.id), setFormData({ ...node.data }), setShowForm(true)) : toggleWatch(node.id)}
+                    onNodeClick={(e, node) => onNodeClick(e, node)}
                     minZoom={fromDisplayZoom(0.6)} maxZoom={fromDisplayZoom(1.5)}
                     panOnScroll={false} zoomOnScroll={false} zoomOnPinch={false} zoomOnDoubleClick={false}
                     preventScrolling={true}
@@ -1489,7 +1476,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         {cat === 'main' ? '메인' :
                                             cat === 'theme' ? '테마' :
                                                 cat === 'etc' ? '기타' :
-                                                    cat === 'eternal' ? '영원살이' : '주석'}
+                                                    cat === 'eternal' ? '영원살이' : '큐레이션'}
                                     </button>
                                 ))}
                             </div>
@@ -1579,7 +1566,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             {
                 showForm && (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                        <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className={`bg-slate-900 border border-slate-700 rounded-3xl w-full ${formData.type === 'annotation' ? 'max-w-3xl' : 'max-w-lg'} shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200`}>
                             <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
                                 <div className="flex items-center gap-2 text-indigo-400 font-bold">
                                     <Shield size={20} />
@@ -1601,87 +1588,174 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             <option value="theme">테마극장</option>
                                             <option value="etc">사복/기타</option>
                                             <option value="eternal">영원살이</option>
-                                            <option value="annotation">주석</option>
+                                            <option value="annotation">큐레이션</option>
                                         </select>
                                     </div>
                                     <div className="flex flex-col gap-1.5">
                                         <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">스토리 제목</label>
-                                        <input type="text" value={formData.label} onChange={e => setFormData({ ...formData, label: e.target.value })}
+                                        <input type="text" value={formData.label || ''} onChange={e => setFormData({ ...formData, label: e.target.value })}
                                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold"
                                             placeholder="제목 입력" />
                                     </div>
                                 </div>
 
-                                {/* Always visible: Image Attachment Section */}
-                                <div className="flex flex-col gap-2 p-4 bg-slate-800/50 border border-slate-700 rounded-2xl">
-                                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500">이미지 설정</label>
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-24 h-32 bg-slate-800 border-2 border-dashed border-slate-700 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 group relative shadow-inner">
-                                            {formData.image ? (
-                                                <img src={formData.image.startsWith('http') || formData.image.startsWith('data:') ? formData.image : `/images/${formData.image}`} className="w-full h-full object-cover" alt="Preview" />
-                                            ) : (
-                                                <ImageIcon className="text-slate-600" size={32} />
-                                            )}
-                                            {isUploading && (
-                                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                                    <div className="w-6 h-6 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                {formData.type !== 'annotation' ? (
+                                    <>
+                                        {/* Image Attachment Section */}
+                                        <div className="flex flex-col gap-3 p-5 bg-slate-800/50 border border-slate-700 rounded-3xl">
+                                            <div className="flex items-center justify-between ml-1">
+                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500">이미지 설정 (실제 비율 미리보기)</label>
+                                                <button
+                                                    onClick={() => setShowGallery(true)}
+                                                    className="text-[10px] font-black text-indigo-400 hover:text-indigo-300 transition-all flex items-center gap-1.5"
+                                                >
+                                                    <Library size={14} /> 라이브러리 열기
+                                                </button>
+                                            </div>
+
+                                            <div className="flex flex-col gap-4">
+                                                <div
+                                                    className={`relative bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden group shadow-2xl mx-auto transition-all duration-500 flex items-center justify-center
+                                                        ${formData.type === 'main' ? 'w-[200px] h-[318px]' :
+                                                            formData.type === 'theme' ? 'w-full aspect-[2/1]' :
+                                                                'w-full aspect-[3/2]'}`}
+                                                >
+                                                    {formData.image ? (
+                                                        <>
+                                                            <img
+                                                                src={formData.image.startsWith('http') || formData.image.startsWith('data:') ? formData.image : `${basePath}/images/${formData.image}`}
+                                                                className="w-full h-full object-contain bg-black/40"
+                                                                alt="Preview"
+                                                            />
+                                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-center gap-2 backdrop-blur-sm">
+                                                                <button
+                                                                    onClick={() => fileInputRef.current?.click()}
+                                                                    className="px-6 py-2 bg-white text-slate-900 rounded-full text-[11px] font-black hover:scale-105 transition-all shadow-xl"
+                                                                >
+                                                                    배경 이미지 변경
+                                                                </button>
+                                                                {formData.image && (
+                                                                    <a
+                                                                        href={formData.image.startsWith('http') || formData.image.startsWith('data:') ? formData.image : `${basePath}/images/${formData.image}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-[10px] text-white/60 hover:text-white underline font-bold"
+                                                                    >
+                                                                        원본 파일 보기
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <div className="flex flex-col items-center gap-3 text-slate-600">
+                                                            <ImageIcon size={48} className="opacity-20 translate-y-2" />
+                                                            <p className="text-[11px] font-black uppercase tracking-widest opacity-40">No Image</p>
+                                                            <button
+                                                                onClick={() => fileInputRef.current?.click()}
+                                                                className="mt-2 px-6 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-full text-[10px] font-black transition-all"
+                                                            >
+                                                                이미지 업로드
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    {isUploading && (
+                                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm">
+                                                            <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[11px] font-black text-white"
-                                            >
-                                                배경 변경
-                                            </button>
+
+                                                <div className="flex flex-col gap-1.5 p-3 bg-slate-950/40 rounded-xl border border-slate-700/50">
+                                                    <label className="text-[9px] text-slate-500 font-black ml-1 uppercase tracking-tighter">Image Path / URL</label>
+                                                    <input
+                                                        type="text"
+                                                        value={formData.image || ''}
+                                                        onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                                                        className="w-full bg-transparent border-none px-1 text-xs outline-none focus:ring-0 font-mono text-slate-400"
+                                                        placeholder="이미지 경로 또는 URL 직접 입력..."
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="flex-grow flex flex-col gap-3">
-                                            <input
-                                                type="file"
-                                                ref={fileInputRef}
-                                                onChange={handleImageUpload}
-                                                className="hidden"
-                                                accept="image/*"
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="flex flex-col gap-1.5">
+                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">유튜브 링크</label>
+                                                <input type="text" value={formData.youtubeUrl || ''} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })}
+                                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-xs font-mono"
+                                                    placeholder="https://youtube.com/..." />
+                                            </div>
+                                            <div className="flex flex-col gap-1.5">
+                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">주인공 (해당 시)</label>
+                                                <input type="text" value={formData.protagonist || ''} onChange={e => setFormData({ ...formData, protagonist: e.target.value })}
+                                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold"
+                                                    placeholder="에르핀, 네르 등" />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="flex flex-col gap-1.5">
+                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">하단 정보 (부제 등)</label>
+                                                <input type="text" value={formData.partLabel || ''} onChange={e => setFormData({ ...formData, partLabel: e.target.value })}
+                                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold"
+                                                    placeholder="예: 1~12화" />
+                                            </div>
+                                            <div className="flex flex-col gap-1.5">
+                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">중요도 (1-5)</label>
+                                                <input type="number" value={formData.importance || 1} min="1" max="5" onChange={e => setFormData({ ...formData, importance: Number(e.target.value) })}
+                                                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold" />
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col gap-6">
+                                        <div className="flex flex-col gap-1.5 p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl">
+                                            <label className="text-[10px] uppercase tracking-wider font-bold text-amber-500/70 ml-1">큐레이션 설명 입력 (설명창 노출 내용)</label>
+                                            <textarea
+                                                value={formData.content || ''}
+                                                onChange={e => setFormData({ ...formData, content: e.target.value })}
+                                                className="w-full h-48 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-amber-500/30 transition-all text-sm leading-relaxed custom-scrollbar resize-none font-sans"
+                                                placeholder="배치 노드들에 대한 설명을 입력하세요..."
                                             />
-                                            <button
-                                                onClick={() => {
-                                                    fetchStorageImages();
-                                                    setShowGallery(true);
-                                                }}
-                                                className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 text-sm"
-                                            >
-                                                <ImageIcon size={18} /> 보관함에서 선택
-                                            </button>
-                                            <button
-                                                onClick={() => fileInputRef.current?.click()}
-                                                disabled={isUploading}
-                                                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 text-sm"
-                                            >
-                                                <Plus size={18} /> {isUploading ? '업로드 중...' : '새 파일 업로드'}
-                                            </button>
-                                            <div className="relative">
-                                                <input
-                                                    type="text"
-                                                    value={formData.image}
-                                                    onChange={e => setFormData({ ...formData, image: e.target.value })}
-                                                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-indigo-500/50 text-[10px] font-mono pr-12 text-slate-400"
-                                                    placeholder="파일명 또는 데이터 URL"
-                                                    onBlur={() => setFormData(prev => ({ ...prev, image: getProxyUrl(prev.image || '') }))}
-                                                />
-                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-600 uppercase">Path</span>
+                                        </div>
+
+                                        {/* Curation Preview - Actual Size Style */}
+                                        <div className="flex flex-col gap-3">
+                                            <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">사용자 화면 미리보기 (실제 비율)</label>
+                                            <div className="w-full overflow-hidden rounded-3xl bg-slate-950/50 p-6 border border-slate-800 shadow-inner">
+                                                <div
+                                                    className="w-[650px] max-w-full bg-slate-950/95 border-2 border-amber-500/40 rounded-[30px] p-8 backdrop-blur-3xl mx-auto shadow-2xl relative"
+                                                >
+                                                    <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-3">
+                                                        <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                                        <span className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em]">GUIDE NOTE</span>
+                                                    </div>
+                                                    <div className="text-[20px] lg:text-[26px] text-slate-100 leading-[1.5] font-black italic opacity-100 break-words whitespace-pre-wrap">
+                                                        {(() => {
+                                                            const content = formData.content || '배치 의도가 기록되지 않았습니다.';
+                                                            const urlRegex = /(https?:\/\/[^\s]+)/g;
+                                                            const parts = content.split(urlRegex);
+
+                                                            return parts.map((part, i) => {
+                                                                if (part.match(urlRegex)) {
+                                                                    return (
+                                                                        <span key={i} className="text-indigo-400 underline underline-offset-4 decoration-2 decoration-indigo-500/50 break-all">
+                                                                            {part}
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                return part;
+                                                            });
+                                                        })()}
+                                                    </div>
+                                                    <div className="mt-6 text-[10px] text-center text-amber-500/20 font-black uppercase tracking-[0.4em] border-t border-white/5 pt-4">
+                                                        CLICK ANYWHERE TO DISMISS
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-
-                                {/* Always visible: Bottom info label (partLabel) */}
-                                <div className="flex flex-col gap-1.5">
-                                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">하단 표시 정보 (회차, 부제 등)</label>
-                                    <input type="text" value={formData.partLabel || ''} onChange={e => setFormData({ ...formData, partLabel: e.target.value })}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all"
-                                        placeholder="예: 제 1화, 시온의 장난 등" />
-                                </div>
-
-
+                                )}
 
                                 {/* Conditional Fields: MAIN */}
                                 {formData.type === 'main' && (
@@ -1818,7 +1892,17 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             <Library size={20} /> 마스터 불러오기
                         </button>
                         <button
-                            onClick={() => (setEditingNodeId(null), setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', importance: 1 }), setShowForm(true))}
+                            onClick={() => (setEditingNodeId(null), setFormData({
+                                label: '',
+                                type: 'main',
+                                image: '',
+                                youtubeUrl: '',
+                                protagonist: '',
+                                importance: 1,
+                                splitType: 'none',
+                                partLabel: '',
+                                content: ''
+                            }), setShowForm(true))}
                             className="bg-green-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-green-700 flex items-center gap-2 font-bold transition-all active:scale-95"
                         >
                             <Plus size={20} /> 새 마스터 생성
@@ -1826,6 +1910,17 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     </div>
                 )
             }
+
+            {/* Discreet Admin Toggle at bottom (Respecting user request to clean header) */}
+            <div className="fixed bottom-6 right-6 z-[60]">
+                <button
+                    onClick={toggleAdmin}
+                    className={`p-2 rounded-lg transition-all ${isAdmin ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'bg-transparent border-none text-slate-800 opacity-[0.03] hover:opacity-30'}`}
+                    title="관리자 설정"
+                >
+                    <Shield size={14} />
+                </button>
+            </div>
         </div >
     );
 }

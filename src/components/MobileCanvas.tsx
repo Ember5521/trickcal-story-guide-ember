@@ -36,7 +36,7 @@ const getProxyUrl = (originalUrl: string) => {
 
 interface StoryNodeData {
     label: string;
-    type: 'main' | 'theme' | 'etc' | 'eternal';
+    type: 'main' | 'theme' | 'etc' | 'eternal' | 'annotation';
     image: string;
     youtubeUrl: string;
     protagonist?: string;
@@ -64,7 +64,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
-    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal'>('main');
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal' | 'annotation'>('main');
     const [searchQuery, setSearchQuery] = useState('');
     const [showInfo, setShowInfo] = useState(false);
     const [showMemo, setShowMemo] = useState(false);
@@ -79,7 +79,15 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [showForm, setShowForm] = useState(false);
     const [editingNode, setEditingNode] = useState<Node | null>(null);
     const [formData, setFormData] = useState<StoryNodeData & { x: number, y: number }>({
-        label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: 0, y: 0
+        label: '',
+        type: 'main',
+        image: '',
+        youtubeUrl: '',
+        protagonist: '',
+        x: 0,
+        y: 0,
+        partLabel: '',
+        importance: 1
     });
     const [isUploading, setIsUploading] = useState(false);
 
@@ -106,7 +114,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         .single();
 
                     if (layout && !lError) {
-                        const layoutNodes = layout.nodes as any[];
+                        const layoutNodes = (layout.nodes as any[]).filter(ln => ln.type !== 'annotationNode');
                         const storyIds = layoutNodes.map(ln => ln.story_id);
 
                         const { data: masters, error: mError } = await supabase
@@ -721,8 +729,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <div className="flex-1 px-2.5 min-w-0 flex flex-col justify-center gap-1">
                                             {/* Top Row: Type & Video Indicator */}
                                             <div className="flex items-center gap-1.5">
-                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'eternal' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>
-                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'eternal' ? 'ETERNAL' : 'ETC'}
+                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'eternal' ? 'bg-emerald-500/20 text-emerald-400' : node.data.type === 'annotation' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-500/20 text-slate-400'}`}>
+                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'eternal' ? 'ETERNAL' : node.data.type === 'annotation' ? 'CURATION' : 'ETC'}
                                                 </span>
                                                 {node.data.youtubeUrl && (
                                                     <Youtube size={10} className="text-rose-500/60" />
@@ -823,6 +831,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <option value="theme">Theme</option>
                                         <option value="etc">ETC</option>
                                         <option value="eternal">영원살이</option>
+                                        <option value="annotation">큐레이션</option>
                                     </select>
                                 </div>
                                 <div className="w-24">
@@ -962,8 +971,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             <p className="text-[11px] leading-relaxed text-slate-300">
                                 <b>가이드 안내</b><br />
                                 • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
-                                • 추천 순서: 극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 권장하는 진행 순서입니다.<br />
                                 • 출시 순서: Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.<br />
+                                • 추천 순서: 극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 추천하는 진행 순서입니다.<br />
                                 • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                             </p>
                         </div>
@@ -990,8 +999,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     <div className="w-full max-w-lg flex flex-col items-center px-6 my-auto animate-in zoom-in-95 duration-300">
                         {/* Status Badge Above Image */}
                         <div className="mb-4">
-                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'eternal' ? 'bg-emerald-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
-                                {selectedDetailNode.data.type === 'eternal' ? 'ETERNAL' : selectedDetailNode.data.type}
+                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'eternal' ? 'bg-emerald-600/60 text-white' : selectedDetailNode.data.type === 'annotation' ? 'bg-amber-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
+                                {selectedDetailNode.data.type === 'eternal' ? 'ETERNAL' : selectedDetailNode.data.type === 'annotation' ? 'CURATION' : selectedDetailNode.data.type}
                             </span>
                         </div>
                         {/* Poster Box - Original Aspect Ratio */}
