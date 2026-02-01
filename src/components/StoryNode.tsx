@@ -19,6 +19,7 @@ export interface StoryNodeData {
     nodeScale?: number; // New: Precise node scaling
     onPlayVideo?: (url: string) => void;
     story_id?: string;
+    isRecentlyNavigated?: boolean;
     m_x?: number;
     m_y?: number;
     content?: string; // For annotations
@@ -51,6 +52,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
     const isWatched = data.watched && !data.isAdmin; // Only show watched state if not admin
     const isAdmin = data.isAdmin;
     const isHighlighted = data.highlighted;
+    const isRecentlyNavigated = data.isRecentlyNavigated;
 
     // Harmonious colors based on type
     const getTypeColorClasses = () => {
@@ -121,121 +123,126 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
 
     return (
         <div className={`
-      relative transition-all duration-500 w-full h-full flex flex-col
-      rounded-2xl ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} border-[6px] ${theme.border}
-      ${selected ? `ring-8 ${theme.ring} scale-[1.03] z-10` : isHighlighted ? 'ring-[12px] ring-amber-400 ring-offset-8 ring-offset-slate-900 scale-[1.05] z-30 shadow-[0_0_50px_rgba(251,191,36,0.6)]' : 'shadow-lg shadow-black/40'}
-      ${isWatched ? 'grayscale opacity-60' : ''}
+      relative transition-all duration-500 w-full h-full flex flex-col rounded-2xl
+      ${selected ? `ring-8 ${theme.ring} scale-[1.03] z-10` : isHighlighted ? 'ring-[8px] ring-amber-400 ring-offset-4 ring-offset-slate-900 scale-[1.05] z-30 shadow-[0_0_50px_rgba(251,191,36,0.6)]' : isRecentlyNavigated ? 'ring-[8px] ring-yellow-400 ring-offset-2 ring-offset-slate-900 scale-[1.05] z-30 shadow-[0_0_40px_rgba(250,204,21,0.8)] animate-pulse' : 'shadow-lg shadow-black/40'}
     `}>
-            {/* Resizer - Admin only */}
-            {isAdmin && (
-                <NodeResizer
-                    color="#4f46e5"
-                    minWidth={100}
-                    minHeight={100}
-                    isVisible={selected}
-                    keepAspectRatio={false} // Allow free resizing for all types
-                    lineStyle={{ border: '2px dashed #4f46e5' }}
-                    handleStyle={{ width: 10, height: 10, borderRadius: 2 }}
-                />
-            )}
+            {/* Grayscale/Opacity wrapper for watched state inside the ring - Includes border and BG */}
+            <div className={`
+                w-full h-full flex flex-col rounded-2xl
+                ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} border-[6px] ${theme.border}
+                transition-all duration-500 ${isWatched ? 'grayscale opacity-60' : ''}
+            `}>
+                {/* Resizer - Admin only */}
+                {isAdmin && (
+                    <NodeResizer
+                        color="#4f46e5"
+                        minWidth={100}
+                        minHeight={100}
+                        isVisible={selected}
+                        keepAspectRatio={false} // Allow free resizing for all types
+                        lineStyle={{ border: '2px dashed #4f46e5' }}
+                        handleStyle={{ width: 10, height: 10, borderRadius: 2 }}
+                    />
+                )}
 
-            {/* 4-way Handles */}
-            {renderHandles('top', Position.Top)}
-            {renderHandles('bottom', Position.Bottom)}
-            {renderHandles('left', Position.Left)}
-            {renderHandles('right', Position.Right)}
+                {/* 4-way Handles */}
+                {renderHandles('top', Position.Top)}
+                {renderHandles('bottom', Position.Bottom)}
+                {renderHandles('left', Position.Left)}
+                {renderHandles('right', Position.Right)}
 
-            {/* Image Header wrapper with Split Indicator */}
-            <div className={`relative ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
-                {data.image ? (
-                    (() => {
-                        // 1. First, apply Cloudflare proxy if it's a Supabase URL
-                        const proxiedImage = getProxyUrl(data.image);
+                {/* Image Header wrapper with Split Indicator */}
+                <div className={`relative ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
+                    {data.image ? (
+                        (() => {
+                            // 1. First, apply Cloudflare proxy if it's a Supabase URL
+                            const proxiedImage = getProxyUrl(data.image);
 
-                        // 2. Determine final source (Handle local path fallback)
-                        const imgSrc = proxiedImage.startsWith('http') || proxiedImage.startsWith('data:')
-                            ? proxiedImage
-                            : `${basePath}/images/${proxiedImage}`;
+                            // 2. Determine final source (Handle local path fallback)
+                            const imgSrc = proxiedImage.startsWith('http') || proxiedImage.startsWith('data:')
+                                ? proxiedImage
+                                : `${basePath}/images/${proxiedImage}`;
 
-                        return (
-                            <img
-                                src={imgSrc}
-                                alt={data.label}
-                                loading="lazy"
-                                data-node-id={data.story_id}
-                                className={`w-full h-full block ${data.type === 'etc' ? 'object-contain' : 'object-cover'}`}
-                                onError={(e) => {
-                                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/256x128?text=Image+Not+Found';
+                            return (
+                                <img
+                                    src={imgSrc}
+                                    alt={data.label}
+                                    loading="lazy"
+                                    data-node-id={data.story_id}
+                                    className={`w-full h-full block ${data.type === 'etc' ? 'object-contain' : 'object-cover'}`}
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).src = 'https://via.placeholder.com/256x128?text=Image+Not+Found';
+                                    }}
+                                />
+                            );
+                        })()
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs py-10">
+                            No Image
+                        </div>
+                    )}
+
+                    {/* Vertical Split Overlay - Left/Right Shading */}
+                    {data.splitType === 'part1' && (
+                        <div className="absolute inset-0 pointer-events-none" style={{
+                            background: 'linear-gradient(to right, transparent 50%, rgba(0,0,0,0.8) 50%)'
+                        }} />
+                    )}
+                    {data.splitType === 'part2' && (
+                        <div className="absolute inset-0 pointer-events-none" style={{
+                            background: 'linear-gradient(to right, rgba(0,0,0,0.8) 50%, transparent 50%)'
+                        }} />
+                    )}
+
+                    {/* Sprout Icon for Eternal Type */}
+                    {data.type === 'eternal' && (
+                        <div className="absolute top-2 left-2 z-30 drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]">
+                            <div className="bg-emerald-500/20 backdrop-blur-md p-1.5 rounded-full border border-emerald-500/30">
+                                <Sprout size={24} className="text-emerald-400" />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Watched Overlay Icon - Only in User Mode */}
+                    {isWatched && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] z-20">
+                            <CheckCircle size={64} className="text-white/80 drop-shadow-lg" />
+                        </div>
+                    )}
+                </div>
+
+                {/* Content 영역 */}
+                {hasContent && (
+                    <div className={`p-2 flex flex-col gap-2 shrink-0 ${data.type === 'eternal' ? 'bg-[#0a3a2a] border-emerald-500/30' : 'bg-slate-800/50 border-slate-800'} backdrop-blur-md border-t`}>
+                        {showTitle && (
+                            <h3 className={`font-bold text-base leading-tight text-center ${theme.text}`}>{data.label}</h3>
+                        )}
+
+                        {data.partLabel && (
+                            <div className={`text-xl font-black text-center py-2.5 rounded-xl ${theme.badge} shadow-inner tracking-tight`}>
+                                {data.partLabel}
+                            </div>
+                        )}
+
+                        {data.youtubeUrl && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (data.onPlayVideo) data.onPlayVideo(data.youtubeUrl!);
                                 }}
-                            />
-                        );
-                    })()
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs py-10">
-                        No Image
-                    </div>
-                )}
-
-                {/* Vertical Split Overlay - Left/Right Shading */}
-                {data.splitType === 'part1' && (
-                    <div className="absolute inset-0 pointer-events-none" style={{
-                        background: 'linear-gradient(to right, transparent 50%, rgba(0,0,0,0.8) 50%)'
-                    }} />
-                )}
-                {data.splitType === 'part2' && (
-                    <div className="absolute inset-0 pointer-events-none" style={{
-                        background: 'linear-gradient(to right, rgba(0,0,0,0.8) 50%, transparent 50%)'
-                    }} />
-                )}
-
-                {/* Sprout Icon for Eternal Type */}
-                {data.type === 'eternal' && (
-                    <div className="absolute top-2 left-2 z-30 drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]">
-                        <div className="bg-emerald-500/20 backdrop-blur-md p-1.5 rounded-full border border-emerald-500/30">
-                            <Sprout size={24} className="text-emerald-400" />
-                        </div>
-                    </div>
-                )}
-
-                {/* Watched Overlay Icon - Only in User Mode */}
-                {isWatched && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] z-20">
-                        <CheckCircle size={64} className="text-white/80 drop-shadow-lg" />
-                    </div>
-                )}
-            </div>
-
-            {/* Content 영역 */}
-            {hasContent && (
-                <div className={`p-2 flex flex-col gap-2 shrink-0 ${data.type === 'eternal' ? 'bg-[#0a3a2a] border-emerald-500/30' : 'bg-slate-800/50 border-slate-800'} backdrop-blur-md border-t`}>
-                    {showTitle && (
-                        <h3 className={`font-bold text-base leading-tight text-center ${theme.text}`}>{data.label}</h3>
-                    )}
-
-                    {data.partLabel && (
-                        <div className={`text-xl font-black text-center py-2.5 rounded-xl ${theme.badge} shadow-inner tracking-tight`}>
-                            {data.partLabel}
-                        </div>
-                    )}
-
-                    {data.youtubeUrl && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (data.onPlayVideo) data.onPlayVideo(data.youtubeUrl!);
-                            }}
-                            className={`
+                                className={`
                             flex items-center justify-center gap-2 rounded-xl py-3 px-6 text-lg font-black transition-all shadow-lg active:scale-95
                             ${isWatched ? 'bg-slate-600' : 'bg-rose-600 hover:bg-rose-700'} 
                             text-white w-full
                         `}
-                        >
-                            <Youtube size={24} />
-                            <span>{data.type === 'etc' || data.type === 'eternal' ? '시청하기' : 'PV 시청하기'}</span>
-                        </button>
-                    )}
-                </div>
-            )}
+                            >
+                                <Youtube size={24} />
+                                <span>{data.type === 'etc' || data.type === 'eternal' ? '시청하기' : 'PV 시청하기'}</span>
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

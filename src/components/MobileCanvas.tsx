@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Lightbulb, TriangleAlert, MapPin
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -96,12 +96,21 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
+    const [showUpdateLog, setShowUpdateLog] = useState(false);
+    const [updateLogContent, setUpdateLogContent] = useState('');
+    const [lastUpdateAt, setLastUpdateAt] = useState<string | null>(null);
+    const [hasNewUpdate, setHasNewUpdate] = useState(false);
+    const [isSavingUpdate, setIsSavingUpdate] = useState(false);
+    const [navHighlightedNodeId, setNavHighlightedNodeId] = useState<string | null>(null);
+    const [isLoaded, setIsLoaded] = useState(false);
+
     const sessionPassword = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const pendingScrollStoryId = useRef<string | null>(null);
 
-    // Load Data
     useEffect(() => {
         const load = async () => {
+            setIsLoaded(false);
             setIsLoading(true);
             setNodes([]);
             try {
@@ -170,14 +179,19 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         story_id: ln.story_id,
                                         m_x: ln.m_x,
                                         m_y: ln.m_y,
-                                        watched: !!hist[ln.id],
+                                        watched: !!hist[ln.story_id || ln.id],
                                         image: getProxyUrl(masterData.image)
                                     }
                                 } as Node;
                             });
                             setNodes(processedNodes);
                             setEdges(layout.edges || []);
+                            setIsLoaded(true);
                         }
+                    } else {
+                        // If no layout found, clear nodes
+                        setNodes([]);
+                        setEdges([]);
                     }
                 }
             } catch (err) {
@@ -188,6 +202,35 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         };
         load();
     }, [season, viewType]);
+
+
+    // Load Update Log
+    useEffect(() => {
+        const fetchUpdateLog = async () => {
+            if (!supabase) return;
+            try {
+                const { data, error } = await supabase
+                    .from('app_updates')
+                    .select('*')
+                    .eq('id', 1)
+                    .single();
+
+                if (data && !error) {
+                    setUpdateLogContent(data.content);
+                    setLastUpdateAt(data.updated_at);
+
+                    // Check if there's a new update since last visit
+                    const lastRead = localStorage.getItem('last_read_update_at');
+                    if (!lastRead || new Date(data.updated_at) > new Date(lastRead)) {
+                        setHasNewUpdate(true);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch update log:", err);
+            }
+        };
+        fetchUpdateLog();
+    }, []);
 
     // Load Memo
     useEffect(() => {
@@ -344,6 +387,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             top: Math.max(0, top - 150),
             behavior: 'smooth'
         });
+
+        // Trigger highlight
+        setNavHighlightedNodeId(id);
+        setTimeout(() => setNavHighlightedNodeId(null), 2000);
     };
 
     // Auto-scroll on search start
@@ -354,18 +401,51 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         }
     }, [searchQuery, matchedNodeIds.length]);
 
-    const toggleWatch = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        const histStr = localStorage.getItem(`watched_history_s${season}`) || '{}';
-        const hist = JSON.parse(histStr);
-        const nw = !hist[id];
-        hist[id] = nw;
-        localStorage.setItem(`watched_history_s${season}`, JSON.stringify(hist));
+    // Handle cross-season pending navigation (Mobile)
+    useEffect(() => {
+        if (isLoaded && pendingScrollStoryId.current && layoutInfo.nodes.length > 0) {
+            const storyId = pendingScrollStoryId.current;
+            const target = layoutInfo.nodes.find(n => n.data.story_id === storyId);
+            if (target) {
+                pendingScrollStoryId.current = null;
+                // Wait for the layout and scroll container to fully realize the new content
+                setTimeout(() => {
+                    scrollToMatch(target.id);
+                }, 800);
+            }
+        }
+    }, [layoutInfo.nodes, isLoaded]);
 
-        setNodes(nds => nds.map(n =>
-            n.id === id ? { ...n, data: { ...n.data, watched: nw } } : n
-        ));
-    };
+    const toggleWatch = useCallback((id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+
+        setNodes(nds => {
+            const targetNode = nds.find(n => n.id === id);
+            if (!targetNode) return nds;
+
+            const nw = !targetNode.data.watched;
+            const syncId = targetNode.data.story_id;
+
+            const histStr = localStorage.getItem(`watched_history_s${season}`) || '{}';
+            const hist = JSON.parse(histStr);
+            const storageKey = syncId || id;
+            hist[storageKey] = nw;
+            localStorage.setItem(`watched_history_s${season}`, JSON.stringify(hist));
+
+            if (nw) {
+                localStorage.setItem('last_watched_story', JSON.stringify({ id: storageKey, season }));
+            }
+
+            return nds.map(n => {
+                const isSameStory = syncId && n.data.story_id === syncId;
+                const isSameNode = n.id === id;
+                if (isSameStory || isSameNode) {
+                    return { ...n, data: { ...n.data, watched: nw } };
+                }
+                return n;
+            });
+        });
+    }, [season]);
 
     const fetchMasterStories = async () => {
         if (!supabase) return;
@@ -547,6 +627,21 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         <button onClick={onToggleView} className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95" title="PC View">
                             <Monitor size={18} />
                         </button>
+                        <button
+                            onClick={() => {
+                                setShowUpdateLog(true);
+                                if (hasNewUpdate) {
+                                    setHasNewUpdate(false);
+                                    localStorage.setItem('last_read_update_at', lastUpdateAt || new Date().toISOString());
+                                }
+                            }}
+                            className={`p-2 rounded-xl border transition-all active:scale-95 ${hasNewUpdate
+                                ? 'bg-lime-500/20 border-lime-500/50 text-lime-400 shadow-[0_0_15px_rgba(163,230,53,0.3)]'
+                                : 'bg-slate-800/80 border-slate-700 text-slate-400'
+                                }`}
+                        >
+                            <Lightbulb size={18} className={hasNewUpdate ? 'animate-pulse' : ''} />
+                        </button>
                     </div>
                     <div className="flex items-center gap-2">
                         {isAdmin && (
@@ -584,6 +679,33 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 </div>
 
                 <div className="flex gap-2 items-center">
+                    <button
+                        onClick={() => {
+                            const last = localStorage.getItem('last_watched_story');
+                            if (!last) return;
+                            const { id: storyId, season: savedSeason } = JSON.parse(last);
+                            if (!storyId) return;
+
+                            // Clear search when navigating to last watched
+                            setSearchQuery('');
+
+                            if (savedSeason && savedSeason !== season) {
+                                pendingScrollStoryId.current = storyId;
+                                setIsLoaded(false); // Force isLoaded to false to prevent premature jump
+                                setSeason(savedSeason);
+                            } else {
+                                const target = nodes.find(n => n.data.story_id === storyId);
+                                if (target) {
+                                    // Delay to ensure search clear doesn't conflict with highlight
+                                    setTimeout(() => scrollToMatch(target.id), 100);
+                                }
+                            }
+                        }}
+                        className="p-2.5 bg-slate-800/50 border border-slate-700/30 rounded-xl text-slate-400 transition-all active:scale-95 group shrink-0"
+                        title="최근 본 스토리로 이동"
+                    >
+                        <MapPin size={16} className="group-hover:animate-bounce" />
+                    </button>
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                         <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-slate-800/50 border border-slate-700/30 rounded-lg py-2 pl-9 pr-3 text-xs focus:ring-1 focus:ring-indigo-500/50 outline-none transition-all" />
@@ -710,8 +832,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     padding: '4px'
                                 }}
                             >
-                                <div className={`h-full group relative bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all ${node.data.watched ? 'opacity-30 grayscale-[0.8]' : 'hover:bg-slate-800/60 shadow-lg'} ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800' : ''} ${matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] border-yellow-400/50' : 'border-slate-800/40'}`}>
-                                    <div className="flex items-center h-full">
+                                <div className={`h-full group relative transition-all ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800 rounded-2xl' : ''} ${navHighlightedNodeId === node.id ? 'ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)] rounded-2xl animate-pulse z-10' : matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] rounded-2xl' : ''}`}>
+                                    <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500 ${node.data.watched ? 'opacity-30 grayscale border-slate-700/50' : 'hover:bg-slate-800/60 shadow-lg border-slate-800/40'}`}>
                                         <div className="relative h-full aspect-square bg-black/20 shrink-0 flex items-center justify-center p-1 border-r border-slate-800/30">
                                             <img src={getImageUrl(node.data.image)} alt={node.data.label} loading="lazy" className="max-w-full max-h-full object-contain drop-shadow-2xl" />
                                             {node.data.type === 'eternal' && (
@@ -1150,6 +1272,93 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         setActiveVideoUrl(null);
                         window.history.back();
                     }} />
+                </div>
+            )}
+            {/* Developer Update Log Modal */}
+            {showUpdateLog && (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[600] flex flex-col animate-in fade-in duration-300">
+                    <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-lime-500/20 rounded-xl text-lime-500 border border-lime-500/20">
+                                <Lightbulb size={20} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-slate-100 italic tracking-tight">DEVELOPMENT LOG</h3>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                                    Last Updated: {lastUpdateAt ? new Date(lastUpdateAt).toLocaleDateString() : 'N/A'}
+                                </p>
+                            </div>
+                        </div>
+                        <button onClick={() => setShowUpdateLog(false)} className="p-2 text-slate-400">
+                            <X size={24} />
+                        </button>
+                    </header>
+
+                    <div className="flex-grow overflow-y-auto p-6 bg-slate-950">
+                        {isAdmin ? (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-2 mb-2 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 text-xs font-bold italic">
+                                    <Shield size={14} />
+                                    <span>ADMIN EDITOR MODE</span>
+                                </div>
+                                <textarea
+                                    value={updateLogContent}
+                                    onChange={(e) => setUpdateLogContent(e.target.value)}
+                                    className="w-full h-[300px] bg-slate-900/50 border border-slate-800 rounded-2xl p-4 text-[13px] text-slate-300 outline-none focus:ring-2 focus:ring-lime-500/30 resize-none font-mono leading-relaxed"
+                                    placeholder="Write update notes here..."
+                                />
+                            </div>
+                        ) : (
+                            <div className="text-slate-300 leading-relaxed whitespace-pre-wrap text-[14px] font-medium">
+                                {updateLogContent || '업데이트 내역이 아직 없습니다.'}
+                            </div>
+                        )}
+                        <div className="h-20" /> {/* Spacer */}
+                    </div>
+
+                    {isAdmin && (
+                        <footer className="p-6 bg-slate-900 border-t border-slate-800 grid grid-cols-2 gap-3 pb-10">
+                            <button
+                                onClick={() => setShowUpdateLog(false)}
+                                className="py-4 bg-slate-800 text-slate-400 font-black rounded-2xl text-[11px] uppercase tracking-widest border border-slate-700"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (!supabase || !sessionPassword.current) return;
+                                    setIsSavingUpdate(true);
+                                    try {
+                                        const { data, error } = await supabase.rpc('save_app_update', {
+                                            p_content: updateLogContent,
+                                            p_password: sessionPassword.current
+                                        });
+                                        if (data && !error) {
+                                            alert("업데이트 로그가 저장되었습니다.");
+                                            setLastUpdateAt(new Date().toISOString());
+                                            setShowUpdateLog(false);
+                                        } else {
+                                            alert("저장 실패: " + (error?.message || "권한이 없습니다."));
+                                        }
+                                    } catch (err) {
+                                        console.error(err);
+                                        alert("오류 발생");
+                                    } finally {
+                                        setIsSavingUpdate(false);
+                                    }
+                                }}
+                                disabled={isSavingUpdate}
+                                className="py-4 bg-lime-500 text-slate-950 font-black rounded-2xl text-[11px] uppercase tracking-widest shadow-lg shadow-lime-900/20 flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
+                            >
+                                {isSavingUpdate ? (
+                                    <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <Save size={16} />
+                                )}
+                                업데이트 저장
+                            </button>
+                        </footer>
+                    )}
                 </div>
             )}
         </div>
