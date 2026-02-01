@@ -1864,63 +1864,18 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 )
             }
 
-            <div className="fixed bottom-6 right-6 z-50 opacity-[0.05] hover:opacity-100 transition-opacity">
-                {process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
-                    <button onClick={toggleAdmin} className="p-2 rounded-xl bg-slate-800/50 text-slate-400 border border-slate-700 shadow-lg hover:bg-slate-700 transition-all"><Shield size={18} /></button>
-                )}
-            </div>
-
-            {
-                isAdmin && (
-                    <div className="fixed bottom-24 right-6 pt-2 z-[60] flex flex-col gap-3 items-end">
-                        <button
-                            onClick={handleSyncToDeploy}
-                            disabled={isSyncing}
-                            className={`bg-amber-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-amber-700 flex items-center gap-2 font-bold transition-all active:scale-95 ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                            <Monitor size={20} className={isSyncing ? 'animate-spin' : ''} />
-                            {isSyncing ? '동기화 중...' : '운영 서버로 동기화'}
-                        </button>
-                        <button
-                            onClick={() => {
-                                fetchMasterStories();
-                                setMasterSearchQuery(''); // Reset search when opening
-                                setShowMasterLibrary(true);
-                            }}
-                            className="bg-indigo-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-indigo-700 flex items-center gap-2 font-bold transition-all active:scale-95"
-                        >
-                            <Library size={20} /> 마스터 불러오기
-                        </button>
-                        <button
-                            onClick={() => (setEditingNodeId(null), setFormData({
-                                label: '',
-                                type: 'main',
-                                image: '',
-                                youtubeUrl: '',
-                                protagonist: '',
-                                importance: 1,
-                                splitType: 'none',
-                                partLabel: '',
-                                content: ''
-                            }), setShowForm(true))}
-                            className="bg-green-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-green-700 flex items-center gap-2 font-bold transition-all active:scale-95"
-                        >
-                            <Plus size={20} /> 새 마스터 생성
-                        </button>
-                    </div>
-                )
-            }
-
-            {/* Discreet Admin Toggle at bottom (Respecting user request to clean header) */}
-            <div className="fixed bottom-6 right-6 z-[60]">
-                <button
-                    onClick={toggleAdmin}
-                    className={`p-2 rounded-lg transition-all ${isAdmin ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'bg-transparent border-none text-slate-800 opacity-[0.03] hover:opacity-30'}`}
-                    title="관리자 설정"
-                >
-                    <Shield size={14} />
-                </button>
-            </div>
+            {/* Discreet Admin Toggle (Guarded for Production) */}
+            {process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+                <div className="fixed bottom-6 right-6 z-[60]">
+                    <button
+                        onClick={toggleAdmin}
+                        className={`p-2 rounded-lg transition-all ${isAdmin ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'bg-transparent border-none text-slate-800 opacity-[0.03] hover:opacity-30'}`}
+                        title="관리자 설정"
+                    >
+                        <Shield size={14} />
+                    </button>
+                </div>
+            )}
         </div >
     );
 }
