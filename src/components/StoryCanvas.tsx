@@ -4,8 +4,8 @@ import React, { useState, useCallback, useEffect, useMemo, useRef, memo } from '
 import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
-    X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone,
-    Image as ImageIcon, Shield, Library, Lightbulb, Save, TriangleAlert, MapPin
+    X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone, Bell,
+    Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CurationNode from '@/components/CurationNode';
@@ -90,6 +90,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [searchQuery, setSearchQuery] = useState('');
     const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
     const [isPlayingVideoId, setPlayingVideoId] = useState<string | null>(null);
+    const [playingVideoStart, setPlayingVideoStart] = useState<number>(0);
     const [isModalFullscreen, setIsModalFullscreen] = useState(false);
     const [edgeType, setEdgeType] = useState<'step' | 'straight'>('step');
     const [isUploading, setIsUploading] = useState(false);
@@ -125,13 +126,32 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const pendingScrollStoryId = useRef<string | null>(null);
     useEffect(() => { edgesRef.current = edges; }, [edges]);
 
-    // YouTube ID Extractor
-    const getYouTubeId = (url: string) => {
+    // YouTube ID & Timestamp Extractor
+    const getYouTubeInfo = (url: string) => {
         if (!url) return null;
-        // Strict regex to prevent potential script injection via URL
-        const regExp = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-        const match = url.match(regExp);
-        return match ? match[1] : null;
+        const idRegExp = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+        const idMatch = url.match(idRegExp);
+        if (!idMatch) return null;
+
+        const id = idMatch[1];
+        let startTime = 0;
+
+        const timeMatch = url.match(/[?&](t|start)=([^&#]+)/);
+        if (timeMatch) {
+            const timeStr = timeMatch[2];
+            if (/^\d+$/.test(timeStr)) {
+                startTime = parseInt(timeStr, 10);
+            } else {
+                // Handle 1m30s etc
+                const h = timeStr.match(/(\d+)h/);
+                const m = timeStr.match(/(\d+)m/);
+                const s = timeStr.match(/(\d+)s/);
+                if (h) startTime += parseInt(h[1], 10) * 3600;
+                if (m) startTime += parseInt(m[1], 10) * 60;
+                if (s) startTime += parseInt(s[1], 10);
+            }
+        }
+        return { id, startTime };
     };
 
     useEffect(() => {
@@ -171,10 +191,20 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         checkDB();
     }, []);
 
+    // 갤러리가 열릴 때 스토리지 이미지를 페칭하는 트리거
+    useEffect(() => {
+        if (showGallery) {
+            fetchStorageImages();
+        }
+    }, [showGallery]);
+
     // Unified Play Video Handler
     const handlePlayVideo = useCallback((url: string) => {
-        const id = getYouTubeId(url);
-        if (id) setPlayingVideoId(id);
+        const info = getYouTubeInfo(url);
+        if (info) {
+            setPlayingVideoId(info.id);
+            setPlayingVideoStart(info.startTime);
+        }
     }, []);
 
     // Filtered Nodes
@@ -450,8 +480,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     type: node.type,
                     x: node.position.x,
                     y: node.position.y,
-                    w: node.width || (node.type === 'annotationNode' ? 64 : 300),
-                    h: node.height || (node.type === 'annotationNode' ? 64 : 200),
+                    w: node.width || (node.type === 'annotationNode' ? 96 : 300),
+                    h: node.height || (node.type === 'annotationNode' ? 96 : 200),
                 };
 
                 if (node.type === 'annotationNode') {
@@ -632,7 +662,10 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             isAdmin,
                                             onDelete: handleDeleteAnnotation,
                                             onUpdate: handleUpdateAnnotation
-                                        } as StoryNodeData
+                                        } as StoryNodeData,
+                                        width: ln.w || 96,
+                                        height: ln.h || 96,
+                                        style: { width: ln.w || 96, height: ln.h || 96 }
                                     } as Node<StoryNodeData>;
                                 }
 
@@ -766,7 +799,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         const newNode = {
             id: `cur_${Date.now()}`,
             type: 'annotationNode',
-            position: { x: center.x - 40, y: center.y - 40 },
+            position: { x: center.x - 48, y: center.y - 48 },
+            width: 96,
+            height: 96,
             data: {
                 type: 'annotation',
                 content: '여기에 배치 이유(큐레이션)를 입력하세요.',
@@ -788,6 +823,22 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     }, [nodes, initialFocus]);
 
     // Admin Persistence & Auth
+    const handleAddStory = () => {
+        setFormData({
+            label: '',
+            type: 'main',
+            image: '',
+            youtubeUrl: '',
+            protagonist: '',
+            importance: 1,
+            splitType: 'none',
+            partLabel: '',
+            content: ''
+        });
+        setEditingNodeId(null);
+        setShowForm(true);
+    };
+
     const toggleAdmin = async () => {
         if (isAdmin) {
             const ok = await syncToCloud(nodes, edges);
@@ -1028,20 +1079,22 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             }
             return;
         }
-        setEditingNodeId(node.id);
-        setFormData({
-            label: node.data.label || '',
-            type: node.data.type || 'main',
-            image: node.data.image || '',
-            youtubeUrl: node.data.youtubeUrl || '',
-            protagonist: node.data.protagonist || '',
-            importance: node.data.importance || 1,
-            splitType: node.data.splitType || 'none',
-            partLabel: node.data.partLabel || '',
-            content: node.data.content || '',
-            story_id: node.data.story_id
-        });
-        setShowForm(true);
+        if (node.type === 'storyNode') {
+            setEditingNodeId(node.id);
+            setFormData({
+                label: node.data.label || '',
+                type: node.data.type || 'main',
+                image: node.data.image || '',
+                youtubeUrl: node.data.youtubeUrl || '',
+                protagonist: node.data.protagonist || '',
+                importance: node.data.importance || 1,
+                splitType: node.data.splitType || 'none',
+                partLabel: node.data.partLabel || '',
+                content: node.data.content || '',
+                story_id: node.data.story_id
+            });
+            setShowForm(true);
+        }
     }, [isAdmin, toggleWatch]);
     const onEdgeClick = useCallback((ev: React.MouseEvent, e: Edge) => {
         if (!isAdmin) return;
@@ -1206,6 +1259,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 } as any));
                 setIsUploading(false);
             };
+            img.onerror = () => {
+                console.error("Image preview load failed");
+                setFormData(prev => ({
+                    ...prev,
+                    image: publicUrl
+                } as any));
+                setIsUploading(false);
+            };
             img.src = publicUrl;
 
         } catch (err) {
@@ -1215,7 +1276,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         }
     };
 
-    const fetchStorageImages = async () => {
+    const fetchStorageImages = useCallback(async () => {
         if (!supabase) return;
         setIsLoadingGallery(true);
         try {
@@ -1229,7 +1290,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     sortBy: { column: 'name', order: 'desc' }
                 });
                 if (data) {
-                    allFiles.push(...data.map(img => ({ ...img, folder: f })));
+                    // .emptyFolderPlaceholder 파일 등을 제외하고 이미지 파일만 필터링
+                    const validFiles = data
+                        .filter(img => !img.name.startsWith('.') && img.metadata)
+                        .map(img => ({ ...img, folder: f }));
+                    allFiles.push(...validFiles);
                 }
             }
 
@@ -1239,7 +1304,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         } finally {
             setIsLoadingGallery(false);
         }
-    };
+    }, [season]); // season에 따라 달라질 수 있으므로 의존성 추가 (현재는 모든 폴더를 돌지만 확장을 위해)
 
 
     const fetchMasterStories = async () => {
@@ -1350,7 +1415,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     }`}
                                 title="업데이트 노트"
                             >
-                                <Lightbulb size={16} className={`md:w-[18px] md:h-[18px] ${hasNewUpdate ? 'animate-pulse' : ''}`} />
+                                <Bell size={16} className={`md:w-[18px] md:h-[18px] ${hasNewUpdate ? 'animate-pulse' : ''}`} />
                                 {hasNewUpdate && (
                                     <span className="absolute -top-1 -right-1 w-2 h-2 bg-lime-500 rounded-full border border-slate-900 animate-bounce" />
                                 )}
@@ -1358,13 +1423,22 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         </div>
 
                         {isAdmin && (
-                            <button
-                                onClick={handleAddCuration}
-                                className="p-2 bg-amber-600/80 hover:bg-amber-600 text-white rounded-xl border border-amber-400/30 shadow-sm shadow-amber-500/10 transition-all flex items-center gap-1 active:scale-95 group"
-                                title="큐레이션 추가"
-                            >
-                                <TriangleAlert size={16} className="md:w-[18px] md:h-[18px] group-hover:rotate-12 transition-transform" />
-                            </button>
+                            <div className="flex items-center gap-1.5 md:gap-2 border-l border-slate-700 pl-2">
+                                <button
+                                    onClick={handleAddStory}
+                                    className="p-2 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-xl border border-indigo-400/30 shadow-sm shadow-indigo-500/10 transition-all flex items-center gap-1 active:scale-95 group"
+                                    title="새 스토리 추가"
+                                >
+                                    <Plus size={16} className="md:w-[18px] md:h-[18px] group-hover:scale-110 transition-transform" />
+                                </button>
+                                <button
+                                    onClick={handleAddCuration}
+                                    className="p-2 bg-amber-600/80 hover:bg-amber-600 text-white rounded-xl border border-amber-400/30 shadow-sm shadow-amber-500/10 transition-all flex items-center gap-1 active:scale-95 group"
+                                    title="큐레이션 추가"
+                                >
+                                    <Lightbulb size={16} className="md:w-[18px] md:h-[18px] group-hover:rotate-12 transition-transform" />
+                                </button>
+                            </div>
                         )}
                     </div>
 
@@ -1497,16 +1571,16 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 {isModalFullscreen ? <Minimize2 size={24} /> : <Maximize2 size={24} />}
                             </button>
                             <button
-                                onClick={() => (setPlayingVideoId(null), setIsModalFullscreen(false))}
+                                onClick={() => (setPlayingVideoId(null), setPlayingVideoStart(0), setIsModalFullscreen(false))}
                                 className="bg-rose-500/10 hover:bg-rose-500/30 p-3 rounded-2xl border border-rose-500/10 text-rose-500/40 hover:text-rose-500 transition-all backdrop-blur-md"
                             >
                                 <X size={24} />
                             </button>
                         </div>
                         <div className={`relative bg-black shadow-2xl overflow-hidden transition-all duration-500 ${isModalFullscreen ? 'w-full h-full' : 'w-full max-w-5xl aspect-video rounded-3xl border border-white/10'}`}>
-                            <iframe src={`https://www.youtube.com/embed/${isPlayingVideoId}?autoplay=1&rel=0`} className="w-full h-full" allowFullScreen />
+                            <iframe src={`https://www.youtube.com/embed/${isPlayingVideoId}?autoplay=1&rel=0${playingVideoStart > 0 ? `&start=${playingVideoStart}` : ''}`} className="w-full h-full" allowFullScreen />
                         </div>
-                        {!isModalFullscreen && <div className="absolute inset-0 -z-10" onClick={() => setPlayingVideoId(null)} />}
+                        {!isModalFullscreen && <div className="absolute inset-0 -z-10" onClick={() => (setPlayingVideoId(null), setPlayingVideoStart(0))} />}
                     </div>
                 )
             }
@@ -1782,12 +1856,10 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                                 alt="Preview"
                                                             />
                                                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-center gap-2 backdrop-blur-sm">
-                                                                <button
-                                                                    onClick={() => fileInputRef.current?.click()}
-                                                                    className="px-6 py-2 bg-white text-slate-900 rounded-full text-[11px] font-black hover:scale-105 transition-all shadow-xl"
-                                                                >
+                                                                <label className="px-6 py-2 bg-white text-slate-900 rounded-full text-[11px] font-black hover:scale-105 transition-all shadow-xl cursor-pointer">
                                                                     배경 이미지 변경
-                                                                </button>
+                                                                    <input type="file" className="hidden" onChange={handleImageUpload} accept="image/*" />
+                                                                </label>
                                                                 {formData.image && (
                                                                     <a
                                                                         href={formData.image.startsWith('http') || formData.image.startsWith('data:') ? formData.image : `${basePath}/images/${formData.image}`}
@@ -1804,12 +1876,10 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                         <div className="flex flex-col items-center gap-3 text-slate-600">
                                                             <ImageIcon size={48} className="opacity-20 translate-y-2" />
                                                             <p className="text-[11px] font-black uppercase tracking-widest opacity-40">No Image</p>
-                                                            <button
-                                                                onClick={() => fileInputRef.current?.click()}
-                                                                className="mt-2 px-6 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-full text-[10px] font-black transition-all"
-                                                            >
+                                                            <label className="mt-2 text-center px-6 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-full text-[10px] font-black transition-all cursor-pointer">
                                                                 이미지 업로드
-                                                            </button>
+                                                                <input type="file" className="hidden" onChange={handleImageUpload} accept="image/*" />
+                                                            </label>
                                                         </div>
                                                     )}
                                                     {isUploading && (

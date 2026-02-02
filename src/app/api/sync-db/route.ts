@@ -131,7 +131,7 @@ export async function POST(req: Request) {
         console.log(`>>> [Sync] Last synced at: ${lastSyncedAt || 'Never'}`);
 
         // 5. Tables Sync
-        const tablesToSync = ['master_stories', 'story_layouts', 'admin_settings'];
+        const tablesToSync = ['master_stories', 'story_layouts', 'admin_settings', 'app_updates'];
 
         for (const table of tablesToSync) {
             let query = sourceSupabase.from(table).select('*');

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Lightbulb, TriangleAlert, MapPin
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Bell, TriangleAlert, MapPin, Lightbulb
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -321,9 +321,28 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     };
 
     const getYouTubeId = (url: string) => {
-        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        if (!url) return null;
+        const regExp = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
         const match = url.match(regExp);
-        return (match && match[2].length === 11) ? match[2] : null;
+        return match ? match[1] : null;
+    };
+
+    const getYouTubeStartTime = (url: string) => {
+        if (!url) return 0;
+        const timeMatch = url.match(/[?&](t|start)=([^&#]+)/);
+        if (!timeMatch) return 0;
+
+        const timeStr = timeMatch[2];
+        if (/^\d+$/.test(timeStr)) return parseInt(timeStr, 10);
+
+        let totalSeconds = 0;
+        const h = timeStr.match(/(\d+)h/);
+        const m = timeStr.match(/(\d+)m/);
+        const s = timeStr.match(/(\d+)s/);
+        if (h) totalSeconds += parseInt(h[1], 10) * 3600;
+        if (m) totalSeconds += parseInt(m[1], 10) * 60;
+        if (s) totalSeconds += parseInt(s[1], 10);
+        return totalSeconds;
     };
 
     // Layout Constants (Denser Layout)
@@ -640,7 +659,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 : 'bg-slate-800/80 border-slate-700 text-slate-400'
                                 }`}
                         >
-                            <Lightbulb size={18} className={hasNewUpdate ? 'animate-pulse' : ''} />
+                            <Bell size={18} className={hasNewUpdate ? 'animate-pulse' : ''} />
                         </button>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1252,7 +1271,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 <div className="fixed inset-0 z-[500] flex items-center justify-center bg-slate-950/60 backdrop-blur-2xl animate-in fade-in duration-300 p-4">
                     <div className="w-full max-w-4xl relative aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10">
                         <iframe
-                            src={`https://www.youtube.com/embed/${getYouTubeId(activeVideoUrl)}?autoplay=1`}
+                            src={`https://www.youtube.com/embed/${getYouTubeId(activeVideoUrl)}?autoplay=1&rel=0${activeVideoUrl ? (getYouTubeStartTime(activeVideoUrl) > 0 ? `&start=${getYouTubeStartTime(activeVideoUrl)}` : '') : ''}`}
                             className="w-full h-full"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                             allowFullScreen

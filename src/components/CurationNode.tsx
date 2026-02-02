@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, memo } from 'react';
-import { TriangleAlert, X, Save, Trash2 } from 'lucide-react';
+import { Lightbulb, X, Save, Trash2 } from 'lucide-react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { StoryNodeData } from './StoryNode';
 
@@ -33,7 +33,10 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
 
             {/* Curation Icon (Large & Glowing) */}
             <div
-                onClick={() => data.isAdmin ? setIsEditing(!isEditing) : setShowTooltip(!showTooltip)}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    data.isAdmin ? setIsEditing(!isEditing) : setShowTooltip(!showTooltip);
+                }}
                 className={`
                     w-24 h-24 flex items-center justify-center rounded-full cursor-pointer transition-all duration-500
                     ${selected ? 'ring-4 ring-amber-400 scale-110 shadow-[0_0_60px_rgba(245,158,11,0.9)]' : 'hover:scale-110 shadow-[0_0_40px_rgba(245,158,11,0.6)]'}
@@ -44,7 +47,7 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
                 {/* Pulsing Outer Glow */}
                 <div className="absolute inset-0 rounded-full animate-pulse bg-amber-500/20 -z-10 scale-150" />
 
-                <TriangleAlert size={54} fill="currentColor" className="fill-amber-500/30 drop-shadow-[0_0_15px_rgba(245,158,11,0.6)]" />
+                <Lightbulb size={54} className="drop-shadow-[0_0_15px_rgba(245,158,11,0.6)]" />
             </div>
 
             {/* Admin Editor Modal - Top Right View */}
@@ -52,7 +55,7 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
                 <div className="absolute bottom-[120%] left-0 z-[1000] w-80 bg-slate-900 border-2 border-amber-500/50 rounded-3xl shadow-2xl p-5 animate-in fade-in slide-in-from-bottom-4 zoom-in-95 origin-bottom-left" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
                         <div className="flex items-center gap-2">
-                            <TriangleAlert size={18} className="text-amber-500" />
+                            <Lightbulb size={18} className="text-amber-500" />
                             <span className="text-[12px] font-black text-amber-500 uppercase tracking-widest">Curation Editor</span>
                         </div>
                         <div className="flex gap-2">
