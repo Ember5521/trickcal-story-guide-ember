@@ -787,31 +787,21 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     }, [nodes, edges, isAdmin, isLoaded]);
 
     const handleDeleteAnnotation = useCallback((id: string) => {
-        setNodes(nds => nds.filter(n => n.id !== id));
-    }, []);
+        setNodes(nds => {
+            const up = nds.filter(n => n.id !== id);
+            saveLocal(up, edges);
+            return up;
+        });
+    }, [edges, saveLocal]);
 
     const handleUpdateAnnotation = useCallback((id: string, content: string) => {
-        setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, content } } : n));
-    }, []);
+        setNodes(nds => {
+            const up = nds.map(n => n.id === id ? { ...n, data: { ...n.data, content } } : n);
+            saveLocal(up, edges);
+            return up;
+        });
+    }, [edges, saveLocal]);
 
-    const handleAddCuration = useCallback(() => {
-        const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-        const newNode = {
-            id: `cur_${Date.now()}`,
-            type: 'annotationNode',
-            position: { x: center.x - 48, y: center.y - 48 },
-            width: 96,
-            height: 96,
-            data: {
-                type: 'annotation',
-                content: '여기에 배치 이유(큐레이션)를 입력하세요.',
-                isAdmin: true,
-                onDelete: handleDeleteAnnotation,
-                onUpdate: handleUpdateAnnotation
-            } as StoryNodeData
-        };
-        setNodes(nds => [...nds, newNode]);
-    }, [screenToFlowPosition, handleDeleteAnnotation, handleUpdateAnnotation]);
 
     // Independent Initial Focus Trigger
     useEffect(() => {
@@ -830,7 +820,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             image: '',
             youtubeUrl: '',
             protagonist: '',
-            importance: 1,
+            importance: 0,
             splitType: 'none',
             partLabel: '',
             content: ''
@@ -1079,22 +1069,22 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             }
             return;
         }
-        if (node.type === 'storyNode') {
-            setEditingNodeId(node.id);
-            setFormData({
-                label: node.data.label || '',
-                type: node.data.type || 'main',
-                image: node.data.image || '',
-                youtubeUrl: node.data.youtubeUrl || '',
-                protagonist: node.data.protagonist || '',
-                importance: node.data.importance || 1,
-                splitType: node.data.splitType || 'none',
-                partLabel: node.data.partLabel || '',
-                content: node.data.content || '',
-                story_id: node.data.story_id
-            });
-            setShowForm(true);
-        }
+
+        // Unified Editor for both Story and Curation nodes
+        setEditingNodeId(node.id);
+        setFormData({
+            label: node.data.label || (node.type === 'annotationNode' ? 'Curation Note' : ''),
+            type: (node.data.type as any) || (node.type === 'annotationNode' ? 'annotation' : 'main'),
+            image: node.data.image || '',
+            youtubeUrl: node.data.youtubeUrl || '',
+            protagonist: node.data.protagonist || '',
+            importance: node.data.importance || 0,
+            splitType: node.data.splitType || 'none',
+            partLabel: node.data.partLabel || '',
+            content: node.data.content || '',
+            story_id: node.data.story_id
+        });
+        setShowForm(true);
     }, [isAdmin, toggleWatch]);
     const onEdgeClick = useCallback((ev: React.MouseEvent, e: Edge) => {
         if (!isAdmin) return;
@@ -1135,7 +1125,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         image: '',
         youtubeUrl: '',
         protagonist: '',
-        importance: 1,
+        importance: 0,
         splitType: 'none',
         partLabel: '',
         content: ''
@@ -1157,38 +1147,36 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         try {
             let storyId = (formData as any).story_id;
 
-            // Skip master story creation/update for 'annotation' type (Curation)
-            if (formData.type !== 'annotation') {
-                if (editingNodeId && storyId) {
-                    // Update existing master story
-                    await supabase.rpc('update_master_story', {
-                        p_id: storyId,
-                        p_label: formData.label,
-                        p_type: formData.type,
-                        p_image: formData.image,
-                        p_youtube_url: formData.youtubeUrl || '',
-                        p_protagonist: formData.protagonist || '',
-                        p_part_label: formData.partLabel || '',
-                        p_importance: formData.importance || 1,
-                        p_password: sessionPassword.current,
-                        p_split_type: formData.splitType || 'none'
-                    });
-                } else {
-                    // Create new master story
-                    const { data: newId, error } = await supabase.rpc('create_master_story', {
-                        p_label: formData.label,
-                        p_type: formData.type,
-                        p_image: formData.image,
-                        p_youtube_url: formData.youtubeUrl || '',
-                        p_protagonist: formData.protagonist || '',
-                        p_part_label: formData.partLabel || '',
-                        p_importance: formData.importance || 1,
-                        p_password: sessionPassword.current,
-                        p_split_type: formData.splitType || 'none'
-                    });
-                    if (error || !newId) throw new Error("Master story creation failed");
-                    storyId = newId;
-                }
+            // Master story creation/update for all types (including Curation)
+            if (editingNodeId && storyId) {
+                // Update existing master story
+                await supabase.rpc('update_master_story', {
+                    p_id: storyId,
+                    p_label: formData.label || (formData.type === 'annotation' ? 'Curation Note' : ''),
+                    p_type: formData.type,
+                    p_image: formData.image,
+                    p_youtube_url: formData.youtubeUrl || '',
+                    p_protagonist: formData.protagonist || '',
+                    p_part_label: formData.partLabel || '',
+                    p_importance: formData.importance || 0,
+                    p_password: sessionPassword.current,
+                    p_split_type: formData.splitType || 'none'
+                });
+            } else {
+                // Create new master story
+                const { data: newId, error } = await supabase.rpc('create_master_story', {
+                    p_label: formData.label || (formData.type === 'annotation' ? 'Curation Note' : ''),
+                    p_type: formData.type,
+                    p_image: formData.image,
+                    p_youtube_url: formData.youtubeUrl || '',
+                    p_protagonist: formData.protagonist || '',
+                    p_part_label: formData.partLabel || '',
+                    p_importance: formData.importance || 0,
+                    p_password: sessionPassword.current,
+                    p_split_type: formData.splitType || 'none'
+                });
+                if (error || !newId) throw new Error("Master story creation failed");
+                storyId = newId;
             }
 
             if (editingNodeId) {
@@ -1207,7 +1195,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 const newNode: Node<StoryNodeData> = {
                     id: `n_${Date.now()}`,
                     position: { x: center.x - w / 2, y: center.y - h / 2 },
-                    data: { ...formData, story_id: storyId, watched: false, isAdmin } as StoryNodeData,
+                    data: {
+                        ...formData,
+                        story_id: storyId,
+                        watched: false,
+                        isAdmin,
+                        onDelete: handleDeleteAnnotation, // Ensure handlers are passed for Curation
+                        onUpdate: handleUpdateAnnotation
+                    } as StoryNodeData,
                     type: formData.type === 'annotation' ? 'annotationNode' : 'storyNode',
                     width: w, height: h,
                     style: { width: w, height: h }
@@ -1346,9 +1341,12 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 story_id: m.id,
                 watched: false,
                 isAdmin,
-                splitType: m.split_type || 'none'
+                splitType: m.split_type || 'none',
+                content: m.type === 'annotation' ? m.label : '',
+                onDelete: handleDeleteAnnotation,
+                onUpdate: handleUpdateAnnotation
             } as StoryNodeData,
-            type: 'storyNode',
+            type: m.type === 'annotation' ? 'annotationNode' : 'storyNode',
             width: w,
             height: h
         };
@@ -1430,13 +1428,6 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     title="새 스토리 추가"
                                 >
                                     <Plus size={16} className="md:w-[18px] md:h-[18px] group-hover:scale-110 transition-transform" />
-                                </button>
-                                <button
-                                    onClick={handleAddCuration}
-                                    className="p-2 bg-amber-600/80 hover:bg-amber-600 text-white rounded-xl border border-amber-400/30 shadow-sm shadow-amber-500/10 transition-all flex items-center gap-1 active:scale-95 group"
-                                    title="큐레이션 추가"
-                                >
-                                    <Lightbulb size={16} className="md:w-[18px] md:h-[18px] group-hover:rotate-12 transition-transform" />
                                 </button>
                             </div>
                         )}
@@ -1925,8 +1916,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                     placeholder="예: 1~12화" />
                                             </div>
                                             <div className="flex flex-col gap-1.5">
-                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">중요도 (1-5)</label>
-                                                <input type="number" value={formData.importance || 1} min="1" max="5" onChange={e => setFormData({ ...formData, importance: Number(e.target.value) })}
+                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">중요도 (0-2)</label>
+                                                <input type="number" value={formData.importance || 0} min="0" max="2" onChange={e => setFormData({ ...formData, importance: Number(e.target.value) })}
                                                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold" />
                                             </div>
                                         </div>

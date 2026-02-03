@@ -46,6 +46,7 @@ interface StoryNodeData {
     m_x?: number; // Mobile specific X
     m_y?: number; // Mobile specific Y
     story_id?: string;
+    content?: string;
 }
 
 interface Node {
@@ -87,7 +88,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         x: 0,
         y: 0,
         partLabel: '',
-        importance: 1
+        importance: 0
     });
     const [isUploading, setIsUploading] = useState(false);
 
@@ -123,8 +124,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         .single();
 
                     if (layout && !lError) {
-                        const layoutNodes = (layout.nodes as any[]).filter(ln => ln.type !== 'annotationNode');
-                        const storyIds = layoutNodes.map(ln => ln.story_id);
+                        const layoutNodes = layout.nodes as any[];
+                        const storyIds = layoutNodes
+                            .filter(ln => ln.type !== 'annotationNode')
+                            .map(ln => ln.story_id);
 
                         const { data: masters, error: mError } = await supabase
                             .from('master_stories')
@@ -137,6 +140,23 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             const hist = JSON.parse(histStr);
 
                             const processedNodes = layoutNodes.map(ln => {
+                                if (ln.type === 'annotationNode') {
+                                    return {
+                                        id: ln.id,
+                                        position: { x: ln.x || 0, y: ln.y || 0 },
+                                        width: ln.w || 96,
+                                        height: ln.h || 96,
+                                        data: {
+                                            label: ln.content || 'Curation Note',
+                                            type: 'annotation',
+                                            content: ln.content,
+                                            image: '',
+                                            youtubeUrl: '',
+                                            importance: 0
+                                        }
+                                    } as Node;
+                                }
+
                                 const master = masterMap.get(ln.story_id);
                                 const masterData = master || {};
 
@@ -281,16 +301,24 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         }
         try {
             // Convert to layout format
-            const layoutNodes = newNodes.map(n => ({
-                id: n.id,
-                story_id: (n.data as any).story_id || n.id,
-                x: n.position.x,
-                y: n.position.y,
-                w: (n as any).width,
-                h: (n as any).height,
-                m_x: n.data.m_x,
-                m_y: n.data.m_y
-            }));
+            const layoutNodes = newNodes.map(n => {
+                const base = {
+                    id: n.id,
+                    type: n.data.type === 'annotation' ? 'annotationNode' : undefined,
+                    x: n.position.x,
+                    y: n.position.y,
+                    w: (n as any).width,
+                    h: (n as any).height,
+                    m_x: n.data.m_x,
+                    m_y: n.data.m_y
+                };
+
+                if (n.data.type === 'annotation') {
+                    return { ...base, content: n.data.content };
+                }
+
+                return { ...base, story_id: (n.data as any).story_id || n.id };
+            });
 
             console.log(`Mobile Cloud sync starting for ${viewType} ${season}...`, { nodeCount: layoutNodes.length });
 
@@ -352,8 +380,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
     // Layout Logic (Slot-based Engine)
     const layoutInfo = useMemo(() => {
-        // Render ALL nodes for continuity
-        const nodesToLayout = nodes;
+        // Render non-annotation nodes only
+        const nodesToLayout = nodes.filter(n => n.data.type !== 'annotation');
 
         if (nodesToLayout.length === 0) return { nodes: [], totalHeight: 1000, maxRow: 10 };
 
@@ -1007,6 +1035,11 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">하단 표시 정보 (회차, 부제 등)</label>
                                 <input type="text" value={formData.partLabel || ''} onChange={e => setFormData({ ...formData, partLabel: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="예: 제 1화" />
                             </div>
+
+                            <div>
+                                <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">중요도 (0-2)</label>
+                                <input type="number" value={formData.importance || 0} min="0" max="2" onChange={e => setFormData({ ...formData, importance: Number(e.target.value) })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none" />
+                            </div>
                         </div>
                         <div className="p-4 bg-slate-950/80 border-t border-slate-800 rounded-b-2xl flex gap-3">
                             {editingNode && (
@@ -1042,7 +1075,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                             p_youtube_url: formData.youtubeUrl || '',
                                             p_protagonist: formData.protagonist || '',
                                             p_part_label: formData.partLabel || '',
-                                            p_importance: formData.importance || 1,
+                                            p_importance: formData.importance || 0,
                                             p_password: sessionPassword.current
                                         });
                                     } else {
@@ -1054,7 +1087,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                             p_youtube_url: formData.youtubeUrl || '',
                                             p_protagonist: formData.protagonist || '',
                                             p_part_label: formData.partLabel || '',
-                                            p_importance: formData.importance || 1,
+                                            p_importance: formData.importance || 0,
                                             p_password: sessionPassword.current
                                         });
                                         if (error || !newId) throw new Error("Master story creation failed");
