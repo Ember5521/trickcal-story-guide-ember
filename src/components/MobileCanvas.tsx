@@ -887,7 +887,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             <div
                                 key={node.id}
                                 id={`node-${node.id}`}
-                                className={`absolute transition-all select-none ${isDragging ? '' : 'duration-700 ease-[cubic-bezier(0.2,1,0.2,1)]'} ${isAdmin ? 'touch-none' : 'touch-pan-y active:scale-[0.98]'} ${isDimmed ? 'opacity-30 grayscale pointer-events-none' : ''}`}
+                                className={`absolute transition-all select-none ${isDragging ? '' : 'duration-700 ease-[cubic-bezier(0.2,1,0.2,1)]'} ${isAdmin ? 'touch-none' : 'touch-pan-y active:scale-[0.98]'} ${isDimmed ? (node.data.watched ? 'opacity-40 pointer-events-none' : 'opacity-20 grayscale pointer-events-none') : ''}`}
                                 onPointerDown={(e) => handleDragStart(node.id, e)}
                                 onClick={() => !isAdmin && !isDimmed && setSelectedDetailNode(node)}
                                 style={{
@@ -897,7 +897,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 }}
                             >
                                 <div className={`h-full group relative transition-all ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800 rounded-2xl' : ''} ${navHighlightedNodeId === node.id ? 'ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)] rounded-2xl animate-pulse z-10' : matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] rounded-2xl' : ''}`}>
-                                    <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500 ${node.data.watched ? 'opacity-30 grayscale border-slate-700/50' : 'hover:bg-slate-800/60 shadow-lg border-slate-800/40'}`}>
+                                    <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500 ${node.data.watched ? 'opacity-60 border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'hover:bg-slate-800/60 shadow-lg border-slate-800/40'}`}>
                                         <div className="relative h-full aspect-square bg-black/20 shrink-0 flex items-center justify-center p-1 border-r border-slate-800/30">
                                             <img src={getImageUrl(node.data.image)} alt={node.data.label} loading="lazy" className="max-w-full max-h-full object-contain drop-shadow-2xl" />
                                             {node.data.type === 'eternal' && (
@@ -933,10 +933,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                                     <button
                                                         onPointerDown={(e) => e.stopPropagation()}
                                                         onClick={(e) => toggleWatch(node.id, e)}
-                                                        className={`transition-all pointer-events-auto p-1.5 ${node.data.watched ? 'text-indigo-400' : 'text-slate-600 active:scale-125'}`}
+                                                        className={`transition-all pointer-events-auto p-1.5 ${node.data.watched ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(52,211,153,0.5)]' : 'text-slate-600 active:scale-125'}`}
                                                         title={node.data.watched ? '시청 완료' : '시청 미완료'}
                                                     >
-                                                        <CheckCircle size={18} fill={node.data.watched ? 'currentColor' : 'none'} className={node.data.watched ? 'fill-indigo-400/20' : ''} />
+                                                        <CheckCircle size={18} fill={node.data.watched ? 'currentColor' : 'none'} className={node.data.watched ? 'fill-emerald-400/20' : ''} />
                                                     </button>
 
                                                     {isAdmin && (

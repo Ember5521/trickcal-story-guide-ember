@@ -129,8 +129,8 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             {/* Grayscale/Opacity wrapper for watched state inside the ring - Includes border and BG */}
             <div className={`
                 w-full h-full flex flex-col rounded-2xl
-                ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} border-[6px] ${theme.border}
-                transition-all duration-500 ${isWatched ? 'grayscale opacity-60' : ''}
+                ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} border-[6px] ${isWatched ? 'border-emerald-500/50' : theme.border}
+                transition-all duration-500 ${isWatched ? 'opacity-70 shadow-[0_0_30px_rgba(16,185,129,0.25)]' : ''}
             `}>
                 {/* Resizer - Admin only */}
                 {isAdmin && (
@@ -205,8 +205,8 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
 
                     {/* Watched Overlay Icon - Only in User Mode */}
                     {isWatched && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[1px] z-20">
-                            <CheckCircle size={64} className="text-white/80 drop-shadow-lg" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-emerald-500/5 backdrop-blur-[1px] z-20">
+                            <CheckCircle size={64} className="text-emerald-400 drop-shadow-[0_0_20px_rgba(16,185,129,0.8)] fill-emerald-400/20" />
                         </div>
                     )}
                 </div>
