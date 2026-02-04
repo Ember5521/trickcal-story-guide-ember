@@ -105,6 +105,9 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [navHighlightedNodeId, setNavHighlightedNodeId] = useState<string | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
 
+    // Filter State
+    const [importanceFilter, setImportanceFilter] = useState<0 | 1 | 2>(0);
+
     const sessionPassword = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const pendingScrollStoryId = useRef<string | null>(null);
@@ -666,13 +669,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             <div className="absolute inset-0 pointer-events-none z-0 opacity-10" style={{ backgroundImage: `url(${basePath}/images/background.jpg)`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
 
             <header className="relative z-50 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800/50 p-3 pt-4 shrink-0 shadow-2xl">
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between mb-3 gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
                         <button onClick={() => setShowInfo(!showInfo)} className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95">
-                            <Info size={18} />
+                            <Info size={16} />
                         </button>
                         <button onClick={onToggleView} className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95" title="PC View">
-                            <Monitor size={18} />
+                            <Monitor size={16} />
                         </button>
                         <button
                             onClick={() => {
@@ -687,10 +690,17 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 : 'bg-slate-800/80 border-slate-700 text-slate-400'
                                 }`}
                         >
-                            <Bell size={18} className={hasNewUpdate ? 'animate-pulse' : ''} />
+                            <Bell size={16} className={hasNewUpdate ? 'animate-pulse' : ''} />
                         </button>
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    {/* Admin Center Group */}
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/30 rounded-2xl border border-white/5 shadow-inner">
+                        {process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+                            <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-transparent border-none text-slate-800 opacity-[0.15] hover:opacity-50'}`}>
+                                <Shield size={14} />
+                            </button>
+                        )}
                         {isAdmin && (
                             <>
                                 <button
@@ -698,30 +708,54 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         fetchMasterStories();
                                         setShowMasterLibrary(true);
                                     }}
-                                    className="p-1.5 bg-indigo-600 rounded-lg text-white border border-indigo-500"
+                                    className="p-1.5 bg-slate-800 rounded-lg text-indigo-400 border border-slate-700"
                                     title="마스터 불러오기"
                                 >
-                                    <Library size={16} />
+                                    <Library size={13} />
                                 </button>
                                 <button
                                     onClick={() => {
                                         const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.position.y)) : 0;
                                         setEditingNode(null);
-                                        setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: 0, y: maxY + SLOT_UNIT });
+                                        setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: 0, y: maxY + SLOT_UNIT, partLabel: '', importance: 0 });
                                         setShowForm(true);
                                     }}
-                                    className="p-1.5 bg-green-600 rounded-lg text-white border border-green-500"
+                                    className="p-1.5 bg-slate-800 rounded-lg text-green-400 border border-slate-700"
                                     title="새 마스터 생성"
                                 >
-                                    <Plus size={16} />
+                                    <Plus size={13} />
                                 </button>
                             </>
                         )}
-                        {process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
-                            <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-transparent border-none text-slate-800 opacity-[0.15] hover:opacity-50'}`}>
-                                <Shield size={16} />
-                            </button>
-                        )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <select
+                            value={importanceFilter}
+                            onChange={(e) => setImportanceFilter(Number(e.target.value) as 0 | 1 | 2)}
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-[10px] font-bold text-slate-100 outline-none"
+                        >
+                            <option value={0} className="bg-slate-900">필터: 모두</option>
+                            <option value={1} className="bg-slate-900">필터: 권장</option>
+                            <option value={2} className="bg-slate-900">필터: 압축</option>
+                        </select>
+                        <select
+                            value={viewType}
+                            onChange={(e) => setViewType(e.target.value as any)}
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-[10px] font-bold text-slate-100 outline-none cursor-pointer transition-all active:bg-slate-700"
+                        >
+                            <option value="release" className="bg-slate-900">순서: 출시</option>
+                            <option value="recommended" className="bg-slate-900">순서: 추천</option>
+                        </select>
+                        <select
+                            value={season}
+                            onChange={e => setSeason(Number(e.target.value))}
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-[10px] font-bold outline-none text-slate-100 transition-all active:bg-slate-700"
+                        >
+                            <option value={1}>시즌: 1</option>
+                            <option value={2}>시즌: 2</option>
+                            <option value={3}>시즌: 3</option>
+                        </select>
                     </div>
                 </div>
 
@@ -748,7 +782,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 }
                             }
                         }}
-                        className="p-2.5 bg-slate-800/50 border border-slate-700/30 rounded-xl text-slate-400 transition-all active:scale-95 group shrink-0"
+                        className="p-2 bg-slate-800/50 border border-slate-700/30 rounded-xl text-slate-400 transition-all active:scale-95 group shrink-0"
                         title="최근 본 스토리로 이동"
                     >
                         <MapPin size={16} className="group-hover:animate-bounce" />
@@ -787,32 +821,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     )}
                     <button
                         onClick={() => setShowMemo(true)}
-                        className={`p-2 rounded-xl border transition-all active:scale-95 ${memoText.trim()
-                            ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20'
+                        className={`p-2 rounded-xl border transition-all active:scale-95 shrink-0 ${memoText.trim()
+                            ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg'
                             : 'bg-slate-800/80 border-slate-700 text-slate-400'
                             }`}
                     >
                         <StickyNote size={18} />
                     </button>
-                    <div className="flex items-center gap-2">
-                        <select
-                            value={viewType}
-                            onChange={(e) => setViewType(e.target.value as any)}
-                            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-100 outline-none cursor-pointer transition-all active:bg-slate-700"
-                        >
-                            <option value="release" className="bg-slate-900">출시 순서</option>
-                            <option value="recommended" className="bg-slate-900">추천 순서</option>
-                        </select>
-                        <select
-                            value={season}
-                            onChange={e => setSeason(Number(e.target.value))}
-                            className="bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold outline-none text-slate-100 transition-all active:bg-slate-700"
-                        >
-                            <option value={1}>S1</option>
-                            <option value={2}>S2</option>
-                            <option value={3}>S3</option>
-                        </select>
-                    </div>
                 </div>
             </header>
 
@@ -850,6 +865,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         const { colIndex, renderTop } = node;
                         const isRight = colIndex === 1;
                         const isDragging = draggedId === node.id;
+                        const isDimmed = !isAdmin && node.data.type !== 'annotation' && (node.data.importance || 0) < importanceFilter;
 
                         // Drag override
                         const dragStyle = isDragging ? {
@@ -870,9 +886,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         return (
                             <div
                                 key={node.id}
-                                className={`absolute transition-all select-none ${isDragging ? '' : 'duration-700 ease-[cubic-bezier(0.2,1,0.2,1)]'} ${isAdmin ? 'touch-none' : 'touch-pan-y active:scale-[0.98]'}`}
+                                id={`node-${node.id}`}
+                                className={`absolute transition-all select-none ${isDragging ? '' : 'duration-700 ease-[cubic-bezier(0.2,1,0.2,1)]'} ${isAdmin ? 'touch-none' : 'touch-pan-y active:scale-[0.98]'} ${isDimmed ? 'opacity-30 grayscale pointer-events-none' : ''}`}
                                 onPointerDown={(e) => handleDragStart(node.id, e)}
-                                onClick={() => !isAdmin && setSelectedDetailNode(node)}
+                                onClick={() => !isAdmin && !isDimmed && setSelectedDetailNode(node)}
                                 style={{
                                     ...dragStyle,
                                     height: `${ROW_HEIGHT}px`,

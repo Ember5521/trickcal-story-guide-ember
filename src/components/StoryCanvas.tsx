@@ -100,6 +100,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [showMemo, setShowMemo] = useState(false);
     const [memoText, setMemoText] = useState('');
 
+    // Filter State
+    const [importanceFilter, setImportanceFilter] = useState<0 | 1 | 2>(0);
+
     // Image Browser State
     const [showGallery, setShowGallery] = useState(false);
     const [storageImages, setStorageImages] = useState<any[]>([]);
@@ -213,7 +216,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         const isSearchActive = query.length >= 2;
 
         return nodes.map(node => {
-            const isHidden = false;
+            // PC Version: Hide nodes if importance is below filter level
+            // Curation nodes (annotation) are always shown or treated as importance 2
+            const isBelowImportance = node.type !== 'annotationNode' && (node.data.importance || 0) < importanceFilter;
+            const isHidden = isBelowImportance;
+
             const isMatched = isSearchActive && node.type === 'storyNode' && (
                 node.data.label?.toLowerCase().includes(query) ||
                 (node.data.protagonist?.toLowerCase().includes(query))
@@ -231,7 +238,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 }
             };
         });
-    }, [nodes, searchQuery, isAdmin, handlePlayVideo, navHighlightedNodeId]);
+    }, [nodes, searchQuery, isAdmin, handlePlayVideo, navHighlightedNodeId, importanceFilter]);
 
     const matchedNodeIds = useMemo(() => {
         return displayNodes.filter(node => node.data.highlighted).map(node => node.id);
@@ -248,9 +255,201 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         );
     }, [masterStories, libraryCategory, masterSearchQuery]);
 
-    // BFS for Virtual Edges
-    // Virtual Edge Logic Removed per user request
-    const displayEdges = edges;
+    // Dynamic Edge Logic (Skip hidden nodes)
+    // Dynamic Edge Logic (Skip hidden nodes)
+    const displayEdges = useMemo(() => {
+        const visibleNodesArray = displayNodes.filter(n => !n.hidden);
+        const visibleNodeIds = new Set(visibleNodesArray.map(n => n.id));
+
+        const filterColors = {
+            0: '#cbd5e1', // Match default edge color from onConnect
+            1: '#bef264', // 권장 (Lime-300)
+            2: '#fb7185'  // 압축 (Rose-400)
+        };
+        const activeColor = filterColors[importanceFilter as keyof typeof filterColors];
+
+        // Standard specifications from onConnect
+        const stdWidth = 6;
+        const stdMarkerSize = 10;
+
+        // 1. Collect all Potential Edges first (without handles)
+        const rawEdges: any[] = [];
+
+        // Solid Edges
+        edges.forEach(e => {
+            if (visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)) {
+                rawEdges.push({ ...e, isVirtual: false });
+            }
+        });
+
+        // Build reachability map for solid connections
+        const solidTargetMap = new Map<string, string[]>();
+        rawEdges.forEach(e => {
+            if (!solidTargetMap.has(e.source)) solidTargetMap.set(e.source, []);
+            solidTargetMap.get(e.source)!.push(e.target);
+        });
+
+        const isReachableSolid = (startId: string, endId: string) => {
+            const queue = [startId];
+            const visited = new Set<string>();
+            while (queue.length > 0) {
+                const curr = queue.shift()!;
+                if (curr === endId) return true;
+                if (visited.has(curr)) continue;
+                visited.add(curr);
+                solidTargetMap.get(curr)?.forEach(t => queue.push(t));
+            }
+            return false;
+        };
+
+        if (importanceFilter !== 0) {
+            // Traversal Map for Full Database Edges
+            const fullEdgeMap = new Map<string, string[]>();
+            edges.forEach(e => {
+                if (!fullEdgeMap.has(e.source)) fullEdgeMap.set(e.source, []);
+                fullEdgeMap.get(e.source)!.push(e.target);
+            });
+
+            const isReachableFull = (startId: string, endId: string) => {
+                const queue = [startId];
+                const visited = new Set<string>();
+                while (queue.length > 0) {
+                    const curr = queue.shift()!;
+                    if (curr === endId) return true;
+                    if (visited.has(curr)) continue;
+                    visited.add(curr);
+                    fullEdgeMap.get(curr)?.forEach(t => queue.push(t));
+                }
+                return false;
+            };
+
+            const findNextVisible = (startId: string): Set<string> => {
+                const found = new Set<string>();
+                const queue: string[] = [startId];
+                const visited = new Set<string>();
+                while (queue.length > 0) {
+                    const current = queue.shift()!;
+                    if (visited.has(current)) continue;
+                    visited.add(current);
+                    const targets = fullEdgeMap.get(current) || [];
+                    for (const targetId of targets) {
+                        if (visibleNodeIds.has(targetId)) found.add(targetId);
+                        else if (!visited.has(targetId)) queue.push(targetId);
+                    }
+                }
+                return found;
+            };
+
+            visibleNodesArray.forEach(sourceNode => {
+                const allTargets = Array.from(findNextVisible(sourceNode.id));
+                // Refinement: Filter out targets that are reachable from other targets in the same set
+                const immediateTargets = allTargets.filter(t => {
+                    return !allTargets.some(other => (other !== t && isReachableFull(other, t)));
+                });
+
+                immediateTargets.forEach(targetId => {
+                    if (isReachableSolid(sourceNode.id, targetId)) return;
+                    rawEdges.push({
+                        id: `v_${sourceNode.id}_${targetId}`,
+                        source: sourceNode.id,
+                        target: targetId,
+                        isVirtual: true
+                    });
+                });
+            });
+        }
+
+        // 2. Global Greedy Handle Assignment
+        // Rule: One arrow per anchor, prioritize shortest distance
+        const occupied = new Map<string, Set<string>>();
+        const getOccupied = (id: string) => {
+            if (!occupied.has(id)) occupied.set(id, new Set());
+            return occupied.get(id)!;
+        };
+
+        const assignmentsList: any[] = [];
+        rawEdges.forEach((edge, index) => {
+            const sNode = displayNodes.find(n => n.id === edge.source);
+            const tNode = displayNodes.find(n => n.id === edge.target);
+            if (!sNode || !tNode) return;
+
+            const s = { x: sNode.position.x, y: sNode.position.y, w: sNode.width || 256, h: sNode.height || 180 };
+            const t = { x: tNode.position.x, y: tNode.position.y, w: tNode.width || 256, h: tNode.height || 180 };
+
+            const sAnchors = {
+                top: { x: s.x + s.w / 2, y: s.y },
+                bottom: { x: s.x + s.w / 2, y: s.y + s.h },
+                left: { x: s.x, y: s.y + s.h / 2 },
+                right: { x: s.x + s.w, y: s.y + s.h / 2 }
+            };
+            const tAnchors = {
+                top: { x: t.x + t.w / 2, y: t.y },
+                bottom: { x: t.x + t.w / 2, y: t.y + t.h },
+                left: { x: t.x, y: t.y + t.h / 2 },
+                right: { x: t.x + t.w, y: t.y + t.h / 2 }
+            };
+
+            Object.entries(sAnchors).forEach(([sId, sPos]) => {
+                Object.entries(tAnchors).forEach(([tId, tPos]) => {
+                    const d = Math.sqrt(Math.pow(sPos.x - tPos.x, 2) + Math.pow(sPos.y - tPos.y, 2));
+                    assignmentsList.push({ edgeIdx: index, sId, tId, d });
+                });
+            });
+        });
+
+        // Sort by distance shortest first
+        assignmentsList.sort((a, b) => a.d - b.d);
+
+        const assignedEdges = new Map<number, { bS: string, bT: string }>();
+        const edgeAssigned = new Set<number>();
+
+        // First pass: Assign to free anchors ONLY
+        assignmentsList.forEach(item => {
+            if (edgeAssigned.has(item.edgeIdx)) return;
+            const edge = rawEdges[item.edgeIdx];
+            if (!getOccupied(edge.source).has(item.sId) && !getOccupied(edge.target).has(item.tId)) {
+                assignedEdges.set(item.edgeIdx, { bS: item.sId, bT: item.tId });
+                getOccupied(edge.source).add(item.sId);
+                getOccupied(edge.target).add(item.tId);
+                edgeAssigned.add(item.edgeIdx);
+            }
+        });
+
+        // Second pass: Fallback for remaining edges (ignore occupancy if anchors are full)
+        rawEdges.forEach((edge, index) => {
+            if (edgeAssigned.has(index)) return;
+            let minD = Infinity, bestS = 'bottom', bestT = 'top';
+            assignmentsList.filter(a => a.edgeIdx === index).forEach(a => {
+                if (a.d < minD) { minD = a.d; bestS = a.sId; bestT = a.tId; }
+            });
+            assignedEdges.set(index, { bS: bestS, bT: bestT });
+            edgeAssigned.add(index);
+        });
+
+        // 3. Construct Final Edge Objects
+        return rawEdges.map((re, idx) => {
+            const { bS, bT } = assignedEdges.get(idx)!;
+            const style: any = { strokeWidth: stdWidth, stroke: activeColor, opacity: 1 };
+            if (re.isVirtual) {
+                style.strokeDasharray = '12,8';
+            }
+
+            return {
+                ...re,
+                sourceHandle: bS,
+                targetHandle: bT,
+                type: 'smoothstep',
+                animated: true,
+                markerEnd: {
+                    type: MarkerType.ArrowClosed,
+                    color: activeColor,
+                    width: stdMarkerSize,
+                    height: stdMarkerSize
+                },
+                style
+            };
+        });
+    }, [edges, displayNodes, importanceFilter]);
 
     // Canvas Bounds (Requirement: Restrict movement based on nodes)
     const translateExtent = useMemo(() => {
@@ -1435,31 +1634,31 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
                     {/* Right Group (Selectors - Visible on small screens) */}
                     <div className="flex md:hidden items-center gap-1.5">
-                        <button
-                            onClick={() => setShowMemo(true)}
-                            className={`p-2 rounded-xl border transition-all ${memoText.trim()
-                                ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg'
-                                : 'bg-slate-800 border-slate-700 text-slate-400'
-                                }`}
+                        <select
+                            value={importanceFilter}
+                            onChange={(e) => setImportanceFilter(Number(e.target.value) as 0 | 1 | 2)}
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-[10px] font-bold text-slate-100 outline-none"
                         >
-                            <StickyNote size={16} />
-                        </button>
+                            <option value={0} className="bg-slate-900">필터: 모두</option>
+                            <option value={1} className="bg-slate-900">필터: 권장</option>
+                            <option value={2} className="bg-slate-900">필터: 압축</option>
+                        </select>
                         <select
                             value={viewType}
                             onChange={(e) => setViewType(e.target.value as any)}
-                            className="bg-slate-800 border border-slate-700 rounded-xl px-2 py-1.5 text-[10px] font-bold text-slate-100 outline-none"
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-[10px] font-bold text-slate-100 outline-none"
                         >
-                            <option value="release">출시</option>
-                            <option value="recommended">추천</option>
+                            <option value="release">순서: 출시</option>
+                            <option value="recommended">순서: 추천</option>
                         </select>
                         <select
                             value={season}
                             onChange={e => setSeason(Number(e.target.value))}
-                            className="bg-slate-800 border border-slate-700 rounded-xl px-2 py-1.5 text-[10px] font-bold text-slate-100 outline-none"
+                            className="bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-[10px] font-bold text-slate-100 outline-none"
                         >
-                            <option value={1}>S1</option>
-                            <option value={2}>S2</option>
-                            <option value={3}>S3</option>
+                            <option value={1}>시즌: 1</option>
+                            <option value={2}>시즌: 2</option>
+                            <option value={3}>시즌: 3</option>
                         </select>
                     </div>
                 </div>
@@ -1478,6 +1677,18 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         <input type="text" placeholder="검색..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="bg-transparent border-none py-1.5 md:py-2 px-2 md:px-3 outline-none w-full md:w-64 lg:w-80 text-xs md:text-sm" />
                         {searchQuery && <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-white mr-1 text-sm">✕</button>}
                     </div>
+
+                    <button
+                        onClick={() => setShowMemo(true)}
+                        className={`p-2 md:p-2.5 rounded-xl border transition-all active:scale-95 group shrink-0 ${memoText.trim()
+                            ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg'
+                            : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-indigo-400 hover:bg-slate-700'
+                            }`}
+                        title="메모장 열기"
+                    >
+                        <StickyNote size={16} className="md:w-[18px] md:h-[18px]" />
+                    </button>
+
                     {matchedNodeIds.length > 0 && (
                         <div className="flex items-center bg-slate-800/80 rounded-xl px-2.5 py-1 border border-slate-700 text-[10px] md:text-xs font-medium gap-2 shrink-0">
                             <span>{currentSearchIndex + 1}/{matchedNodeIds.length}</span>
@@ -1491,32 +1702,31 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
                 {/* Right Container (Desktop only) */}
                 <div className="hidden md:flex items-center gap-3">
-                    <button
-                        onClick={() => setShowMemo(true)}
-                        className={`p-2.5 rounded-xl transition-all active:scale-95 border ${memoText.trim()
-                            ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20'
-                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-indigo-400 hover:bg-slate-700'
-                            }`}
-                        title="메모장 열기"
+                    <select
+                        value={importanceFilter}
+                        onChange={(e) => setImportanceFilter(Number(e.target.value) as 0 | 1 | 2)}
+                        className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
                     >
-                        <StickyNote size={18} />
-                    </button>
+                        <option value={0} className="bg-slate-900">필터: 모두</option>
+                        <option value={1} className="bg-slate-900">필터: 권장</option>
+                        <option value={2} className="bg-slate-900">필터: 압축</option>
+                    </select>
                     <select
                         value={viewType}
                         onChange={(e) => setViewType(e.target.value as any)}
                         className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
                     >
-                        <option value="release" className="bg-slate-900">출시 순서</option>
-                        <option value="recommended" className="bg-slate-900">추천 순서</option>
+                        <option value="release" className="bg-slate-900">순서: 출시</option>
+                        <option value="recommended" className="bg-slate-900">순서: 추천</option>
                     </select>
                     <select
                         value={season}
                         onChange={e => setSeason(Number(e.target.value))}
                         className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
                     >
-                        <option value={1}>Season 1</option>
-                        <option value={2}>Season 2</option>
-                        <option value={3}>Season 3</option>
+                        <option value={1}>시즌: 1</option>
+                        <option value={2}>시즌: 2</option>
+                        <option value={3}>시즌: 3</option>
                     </select>
                 </div>
 
