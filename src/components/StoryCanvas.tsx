@@ -247,7 +247,12 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     // Master Library Search Filtering
     const filteredMasterStories = useMemo(() => {
         const query = masterSearchQuery.toLowerCase().trim();
-        const categoryFiltered = masterStories.filter(m => m.type === libraryCategory);
+        const categoryFiltered = masterStories.filter(m => {
+            if (libraryCategory === 'theme') {
+                return m.type === 'theme' || m.type === 'theme_x' || m.type === 'theme_now';
+            }
+            return m.type === libraryCategory;
+        });
         if (!query) return categoryFiltered;
         return categoryFiltered.filter(m =>
             m.label?.toLowerCase().includes(query) ||
@@ -911,7 +916,15 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         isAdmin,
                                         onDelete: handleDeleteAnnotation,
                                         onUpdate: handleUpdateAnnotation,
-                                        image: getProxyUrl(masterData.image)
+                                        onPlayVideo: (url: string) => {
+                                            const info = getYouTubeInfo(url);
+                                            if (info) {
+                                                setPlayingVideoId(info.id);
+                                                setPlayingVideoStart(info.startTime);
+                                            }
+                                        },
+                                        image: getProxyUrl(masterData.image),
+                                        fullVideoUrl: masterData.full_video_url || ''
                                     }
                                 } as Node<StoryNodeData>;
                             });
@@ -1281,6 +1294,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             splitType: node.data.splitType || 'none',
             partLabel: node.data.partLabel || '',
             content: node.data.content || '',
+            fullVideoUrl: node.data.fullVideoUrl || '',
             story_id: node.data.story_id
         });
         setShowForm(true);
@@ -1327,7 +1341,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         importance: 0,
         splitType: 'none',
         partLabel: '',
-        content: ''
+        content: '',
+        fullVideoUrl: ''
     });
 
     const handleSaveNode = async () => {
@@ -1337,7 +1352,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
         const getDimensions = () => {
             if (formData.type === 'main') return { w: 406, h: 645 };
-            if (formData.type === 'theme') return { w: 520, h: 260 };
+            if (formData.type === 'theme' || formData.type === 'theme_x') return { w: 520, h: 260 };
             return { w: 300, h: 200 };
         };
 
@@ -1359,7 +1374,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     p_part_label: formData.partLabel || '',
                     p_importance: formData.importance || 0,
                     p_password: sessionPassword.current,
-                    p_split_type: formData.splitType || 'none'
+                    p_split_type: formData.splitType || 'none',
+                    p_full_video_url: formData.fullVideoUrl || ''
                 });
             } else {
                 // Create new master story
@@ -1372,7 +1388,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     p_part_label: formData.partLabel || '',
                     p_importance: formData.importance || 0,
                     p_password: sessionPassword.current,
-                    p_split_type: formData.splitType || 'none'
+                    p_split_type: formData.splitType || 'none',
+                    p_full_video_url: formData.fullVideoUrl || ''
                 });
                 if (error || !newId) throw new Error("Master story creation failed");
                 storyId = newId;
@@ -1400,7 +1417,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         watched: false,
                         isAdmin,
                         onDelete: handleDeleteAnnotation, // Ensure handlers are passed for Curation
-                        onUpdate: handleUpdateAnnotation
+                        onUpdate: handleUpdateAnnotation,
+                        onPlayVideo: (url: string) => {
+                            const info = getYouTubeInfo(url);
+                            if (info) {
+                                setPlayingVideoId(info.id);
+                                setPlayingVideoStart(info.startTime);
+                            }
+                        }
                     } as StoryNodeData,
                     type: formData.type === 'annotation' ? 'annotationNode' : 'storyNode',
                     width: w, height: h,
@@ -1521,7 +1545,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const handleImportMaster = (m: any) => {
         const getDimensions = (type: string) => {
             if (type === 'main') return { w: 406, h: 645 };
-            if (type === 'theme') return { w: 520, h: 260 };
+            if (type === 'theme' || type === 'theme_x') return { w: 520, h: 260 };
             return { w: 300, h: 200 };
         };
         const { w, h } = getDimensions(m.type);
@@ -1535,6 +1559,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 type: m.type,
                 image: m.image,
                 youtubeUrl: m.youtube_url,
+                fullVideoUrl: m.full_video_url,
                 protagonist: m.protagonist,
                 importance: m.importance,
                 story_id: m.id,
@@ -1543,7 +1568,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 splitType: m.split_type || 'none',
                 content: m.type === 'annotation' ? m.label : '',
                 onDelete: handleDeleteAnnotation,
-                onUpdate: handleUpdateAnnotation
+                onUpdate: handleUpdateAnnotation,
+                onPlayVideo: (url: string) => {
+                    const info = getYouTubeInfo(url);
+                    if (info) {
+                        setPlayingVideoId(info.id);
+                        setPlayingVideoStart(info.startTime);
+                    }
+                }
             } as StoryNodeData,
             type: m.type === 'annotation' ? 'annotationNode' : 'storyNode',
             width: w,
@@ -1964,11 +1996,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                 <div className="flex items-center gap-2">
                                                     <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter ${m.type === 'main' ? 'bg-indigo-500/80 text-white' :
                                                         m.type === 'theme' ? 'bg-amber-500/80 text-white' :
-                                                            m.type === 'eternal' ? 'bg-amber-600 text-white border border-amber-400/50' :
-                                                                m.type === 'annotation' ? 'bg-orange-600 text-white' :
-                                                                    'bg-emerald-500/80 text-white'
+                                                            m.type === 'theme_x' ? 'bg-rose-600/90 text-white shadow-lg shadow-rose-500/20' :
+                                                                m.type === 'theme_now' ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/20' :
+                                                                    m.type === 'eternal' ? 'bg-amber-600 text-white border border-amber-400/50' :
+                                                                        m.type === 'annotation' ? 'bg-orange-600 text-white' :
+                                                                            'bg-emerald-500/80 text-white'
                                                         }`}>
-                                                        {m.type}
+                                                        {m.type === 'theme_x' ? '테마(미개봉)' :
+                                                            m.type === 'theme_now' ? '테마(상영중)' : m.type}
                                                     </span>
                                                 </div>
                                             </div>
@@ -2015,6 +2050,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold">
                                             <option value="main">메인스토리</option>
                                             <option value="theme">테마극장</option>
+                                            <option value="theme_x">테마극장(미개봉)</option>
+                                            <option value="theme_now">테마극장(상영중)</option>
                                             <option value="etc">사복/기타</option>
                                             <option value="eternal">영원살이</option>
                                             <option value="annotation">큐레이션</option>
@@ -2105,10 +2142,16 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="flex flex-col gap-1.5">
-                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">유튜브 링크</label>
+                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">유튜브 PV 링크</label>
                                                 <input type="text" value={formData.youtubeUrl || ''} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })}
                                                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-xs font-mono"
-                                                    placeholder="https://youtube.com/..." />
+                                                    placeholder="PV 영상 https://youtube.com/..." />
+                                            </div>
+                                            <div className="flex flex-col gap-1.5">
+                                                <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">전체 다시보기 (테마X 전용)</label>
+                                                <input type="text" value={formData.fullVideoUrl || ''} onChange={e => setFormData({ ...formData, fullVideoUrl: e.target.value })}
+                                                    className={`w-full bg-slate-800 border ${formData.type === 'theme_x' ? 'border-rose-500/50' : 'border-slate-700'} rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-rose-500/30 transition-all text-xs font-mono`}
+                                                    placeholder="풀버전 https://youtube.com/..." />
                                             </div>
                                             <div className="flex flex-col gap-1.5">
                                                 <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">주인공 (해당 시)</label>
@@ -2331,7 +2374,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             }
 
             {/* Discreet Admin Toggle (Guarded for Production) */}
-            {process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+            {!isProd && process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
                 <div className="fixed bottom-6 right-6 z-[60]">
                     <button
                         onClick={toggleAdmin}

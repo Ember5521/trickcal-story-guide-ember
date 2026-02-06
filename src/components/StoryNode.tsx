@@ -6,9 +6,10 @@ import { Youtube, User, Star, CheckCircle, Sprout } from 'lucide-react';
 
 export interface StoryNodeData {
     label?: string;
-    type?: 'main' | 'theme' | 'etc' | 'eternal' | 'annotation';
+    type?: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation';
     image?: string;
     youtubeUrl?: string;
+    fullVideoUrl?: string;
     protagonist?: string;
     importance?: number;
     watched?: boolean;
@@ -69,6 +70,20 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             bg: 'bg-slate-800/80',
             text: 'text-white',
             badge: 'bg-slate-800 text-slate-100'
+        };
+        if (data.type === 'theme_now') return {
+            border: 'border-indigo-600',
+            ring: 'ring-indigo-500/40',
+            bg: 'bg-slate-900/90',
+            text: 'text-indigo-200',
+            badge: 'bg-indigo-950/60 text-indigo-100 border border-indigo-500/30'
+        };
+        if (data.type === 'theme_x') return {
+            border: 'border-rose-600/60',
+            ring: 'ring-rose-500/40',
+            bg: 'bg-slate-900/90',
+            text: 'text-rose-200',
+            badge: 'bg-rose-950/60 text-rose-100 border border-rose-500/30'
         };
         if (data.type === 'eternal') return {
             border: 'border-emerald-600',
@@ -132,6 +147,22 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                 ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} border-[6px] ${isWatched ? 'border-emerald-500/50' : theme.border}
                 transition-all duration-500 ${isWatched ? 'opacity-70 shadow-[0_0_30px_rgba(16,185,129,0.25)]' : ''}
             `}>
+                {/* Theme X Special Badge (Sign at the top) */}
+                {data.type === 'theme_x' && (
+                    <div className="absolute -top-15 left-1/2 -translate-x-1/2 z-[100] whitespace-nowrap">
+                        <div className="bg-rose-600 text-white text-[22px] font-black px-5 py-2 rounded-2xl shadow-lg border border-rose-400/50 flex items-center ring-4 ring-rose-500/20">
+                            재개봉관 준비 중
+                        </div>
+                    </div>
+                )}
+                {/* Theme Now Special Badge (Sign at the top) */}
+                {data.type === 'theme_now' && (
+                    <div className="absolute -top-15 left-1/2 -translate-x-1/2 z-[100] whitespace-nowrap">
+                        <div className="bg-indigo-600 text-white text-[22px] font-black px-5 py-2 rounded-2xl shadow-lg border border-indigo-400/50 flex items-center ring-4 ring-indigo-500/20">
+                            현재 상영중
+                        </div>
+                    </div>
+                )}
                 {/* Resizer - Admin only */}
                 {isAdmin && (
                     <NodeResizer
@@ -213,7 +244,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
 
                 {/* Content 영역 */}
                 {hasContent && (
-                    <div className={`p-2 flex flex-col gap-2 shrink-0 ${data.type === 'eternal' ? 'bg-[#0a3a2a] border-emerald-500/30' : 'bg-slate-800/50 border-slate-800'} backdrop-blur-md border-t`}>
+                    <div className={`p-2 flex flex-col gap-2 shrink-0 ${data.type === 'eternal' ? 'bg-[#0a3a2a] border-emerald-500/30' : data.type === 'theme_x' ? 'bg-rose-950/20 border-rose-500/20' : 'bg-slate-800/50 border-slate-800'} backdrop-blur-md border-t`}>
                         {showTitle && (
                             <h3 className={`font-bold text-base leading-tight text-center ${theme.text}`}>{data.label}</h3>
                         )}
@@ -224,22 +255,40 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                             </div>
                         )}
 
-                        {data.youtubeUrl && (
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (data.onPlayVideo) data.onPlayVideo(data.youtubeUrl!);
-                                }}
-                                className={`
-                            flex items-center justify-center gap-2 rounded-xl py-3 px-6 text-lg font-black transition-all shadow-lg active:scale-95
-                            ${isWatched ? 'bg-slate-600' : 'bg-rose-600 hover:bg-rose-700'} 
-                            text-white w-full
-                        `}
-                            >
-                                <Youtube size={24} />
-                                <span>{data.type === 'etc' || data.type === 'eternal' ? '시청하기' : 'PV 시청하기'}</span>
-                            </button>
-                        )}
+                        <div className="flex gap-2">
+                            {data.youtubeUrl && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (data.onPlayVideo) data.onPlayVideo(data.youtubeUrl!);
+                                    }}
+                                    className={`
+                                        flex items-center justify-center gap-2 rounded-xl py-3 px-4 text-base font-black transition-all shadow-lg active:scale-95
+                                        ${isWatched ? 'bg-slate-600' : 'bg-rose-600 hover:bg-rose-700'} 
+                                        text-white flex-1
+                                    `}
+                                >
+                                    <Youtube size={20} />
+                                    <span>{data.type === 'etc' || data.type === 'eternal' ? '시청하기' : 'PV 시청하기'}</span>
+                                </button>
+                            )}
+
+                            {(data.type === 'theme_x' || data.type === 'theme_now') && data.fullVideoUrl && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (data.onPlayVideo) data.onPlayVideo(data.fullVideoUrl!);
+                                    }}
+                                    className={`
+                                        flex items-center justify-center gap-2 rounded-xl py-3 px-4 text-base font-black transition-all shadow-lg active:scale-95
+                                        bg-indigo-600 hover:bg-indigo-700 text-white flex-1
+                                    `}
+                                >
+                                    <Youtube size={20} />
+                                    <span>전체 다시보기</span>
+                                </button>
+                            )}
+                        </div>
                     </div>
                 )}
             </div>

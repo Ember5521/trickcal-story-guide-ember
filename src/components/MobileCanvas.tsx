@@ -36,9 +36,10 @@ const getProxyUrl = (originalUrl: string) => {
 
 interface StoryNodeData {
     label: string;
-    type: 'main' | 'theme' | 'etc' | 'eternal' | 'annotation';
+    type: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation';
     image: string;
     youtubeUrl: string;
+    fullVideoUrl?: string;
     protagonist?: string;
     partLabel?: string;
     importance?: number;
@@ -47,6 +48,7 @@ interface StoryNodeData {
     m_y?: number; // Mobile specific Y
     story_id?: string;
     content?: string;
+    splitType?: 'none' | 'part1' | 'part2';
 }
 
 interface Node {
@@ -84,11 +86,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         type: 'main',
         image: '',
         youtubeUrl: '',
+        fullVideoUrl: '',
         protagonist: '',
         x: 0,
         y: 0,
         partLabel: '',
-        importance: 0
+        importance: 0,
+        splitType: 'none'
     });
     const [isUploading, setIsUploading] = useState(false);
 
@@ -166,7 +170,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 // Consistent defaults for migrated data
                                 const getMigratedDimensions = (type: string) => {
                                     if (type === 'main') return { w: 260, h: 380 };
-                                    if (type === 'theme') return { w: 320, h: 200 };
+                                    if (type === 'theme' || type === 'theme_x') return { w: 320, h: 200 };
                                     return { w: 300, h: 200 };
                                 };
 
@@ -198,6 +202,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     data: {
                                         ...masterData,
                                         youtubeUrl: masterData.youtube_url,
+                                        fullVideoUrl: masterData.full_video_url,
                                         partLabel: masterData.part_label,
                                         story_id: ln.story_id,
                                         m_x: ln.m_x,
@@ -524,6 +529,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 type: m.type,
                 image: getProxyUrl(m.image),
                 youtubeUrl: m.youtube_url,
+                fullVideoUrl: m.full_video_url,
                 protagonist: m.protagonist,
                 importance: m.importance,
                 story_id: m.id,
@@ -695,39 +701,39 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     </div>
 
                     {/* Admin Center Group */}
-                    <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/30 rounded-2xl border border-white/5 shadow-inner">
-                        {process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+                    {!isProd && process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/30 rounded-2xl border border-white/5 shadow-inner">
                             <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-transparent border-none text-slate-800 opacity-[0.15] hover:opacity-50'}`}>
                                 <Shield size={14} />
                             </button>
-                        )}
-                        {isAdmin && (
-                            <>
-                                <button
-                                    onClick={() => {
-                                        fetchMasterStories();
-                                        setShowMasterLibrary(true);
-                                    }}
-                                    className="p-1.5 bg-slate-800 rounded-lg text-indigo-400 border border-slate-700"
-                                    title="마스터 불러오기"
-                                >
-                                    <Library size={13} />
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.position.y)) : 0;
-                                        setEditingNode(null);
-                                        setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: 0, y: maxY + SLOT_UNIT, partLabel: '', importance: 0 });
-                                        setShowForm(true);
-                                    }}
-                                    className="p-1.5 bg-slate-800 rounded-lg text-green-400 border border-slate-700"
-                                    title="새 마스터 생성"
-                                >
-                                    <Plus size={13} />
-                                </button>
-                            </>
-                        )}
-                    </div>
+                            {isAdmin && (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            fetchMasterStories();
+                                            setShowMasterLibrary(true);
+                                        }}
+                                        className="p-1.5 bg-slate-800 rounded-lg text-indigo-400 border border-slate-700"
+                                        title="마스터 불러오기"
+                                    >
+                                        <Library size={13} />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.position.y)) : 0;
+                                            setEditingNode(null);
+                                            setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: 0, y: maxY + SLOT_UNIT, partLabel: '', importance: 0 });
+                                            setShowForm(true);
+                                        }}
+                                        className="p-1.5 bg-slate-800 rounded-lg text-green-400 border border-slate-700"
+                                        title="새 마스터 생성"
+                                    >
+                                        <Plus size={13} />
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
 
                     <div className="flex items-center gap-1.5 shrink-0">
                         <select
@@ -915,8 +921,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <div className="flex-1 px-2.5 min-w-0 flex flex-col justify-center gap-1">
                                             {/* Top Row: Type & Video Indicator */}
                                             <div className="flex items-center gap-1.5">
-                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'eternal' ? 'bg-emerald-500/20 text-emerald-400' : node.data.type === 'annotation' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-500/20 text-slate-400'}`}>
-                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'eternal' ? 'ETERNAL' : node.data.type === 'annotation' ? 'CURATION' : 'ETC'}
+                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' || node.data.type === 'theme_now' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'theme_x' ? 'bg-rose-500/20 text-rose-400' : node.data.type === 'eternal' ? 'bg-emerald-500/20 text-emerald-400' : node.data.type === 'annotation' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-500/20 text-slate-400'}`}>
+                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : node.data.type === 'theme_now' ? 'THEME (상영중)' : node.data.type === 'eternal' ? 'ETERNAL' : node.data.type === 'annotation' ? 'CURATION' : 'ETC'}
                                                 </span>
                                                 {node.data.youtubeUrl && (
                                                     <Youtube size={10} className="text-rose-500/60" />
@@ -1015,6 +1021,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     <select value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value as any })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-sm appearance-none outline-none focus:ring-1 focus:ring-indigo-500">
                                         <option value="main">Main</option>
                                         <option value="theme">Theme</option>
+                                        <option value="theme_x">Theme(미개봉)</option>
+                                        <option value="theme_now">Theme(상영중)</option>
                                         <option value="etc">ETC</option>
                                         <option value="eternal">영원살이</option>
                                         <option value="annotation">큐레이션</option>
@@ -1036,16 +1044,22 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     </label>
                                 </div>
                             </div>
-                            {(formData.type === 'theme' || formData.type === 'eternal') && (
+                            {(formData.type === 'theme' || formData.type === 'theme_x' || formData.type === 'eternal') && (
                                 <div>
                                     <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">Protagonist</label>
                                     <input type="text" value={formData.protagonist || ''} onChange={e => setFormData({ ...formData, protagonist: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="에르핀, 네르 등" />
                                 </div>
                             )}
 
-                            <div>
-                                <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">YouTube link</label>
-                                <input type="text" value={formData.youtubeUrl} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-xs font-mono outline-none" placeholder="https://youtube.com/..." />
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">YouTube link (PV)</label>
+                                    <input type="text" value={formData.youtubeUrl} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-xs font-mono outline-none" placeholder="PV https://..." />
+                                </div>
+                                <div>
+                                    <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">Full Replay (Theme X)</label>
+                                    <input type="text" value={formData.fullVideoUrl || ''} onChange={e => setFormData({ ...formData, fullVideoUrl: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-xs font-mono outline-none" placeholder="full https://..." />
+                                </div>
                             </div>
 
                             <div>
@@ -1093,7 +1107,9 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                             p_protagonist: formData.protagonist || '',
                                             p_part_label: formData.partLabel || '',
                                             p_importance: formData.importance || 0,
-                                            p_password: sessionPassword.current
+                                            p_password: sessionPassword.current,
+                                            p_split_type: formData.splitType || 'none',
+                                            p_full_video_url: formData.fullVideoUrl || ''
                                         });
                                     } else {
                                         // Create new master story
@@ -1105,7 +1121,9 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                             p_protagonist: formData.protagonist || '',
                                             p_part_label: formData.partLabel || '',
                                             p_importance: formData.importance || 0,
-                                            p_password: sessionPassword.current
+                                            p_password: sessionPassword.current,
+                                            p_split_type: formData.splitType || 'none',
+                                            p_full_video_url: formData.fullVideoUrl || ''
                                         });
                                         if (error || !newId) throw new Error("Master story creation failed");
                                         storyId = newId;
@@ -1190,8 +1208,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     <div className="w-full max-w-lg flex flex-col items-center px-6 my-auto animate-in zoom-in-95 duration-300">
                         {/* Status Badge Above Image */}
                         <div className="mb-4">
-                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'eternal' ? 'bg-emerald-600/60 text-white' : selectedDetailNode.data.type === 'annotation' ? 'bg-amber-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
-                                {selectedDetailNode.data.type === 'eternal' ? 'ETERNAL' : selectedDetailNode.data.type === 'annotation' ? 'CURATION' : selectedDetailNode.data.type}
+                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'theme_now' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'theme_x' ? 'bg-rose-600/60 text-white' : selectedDetailNode.data.type === 'eternal' ? 'bg-emerald-600/60 text-white' : selectedDetailNode.data.type === 'annotation' ? 'bg-amber-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
+                                {selectedDetailNode.data.type === 'eternal' ? 'ETERNAL' : selectedDetailNode.data.type === 'annotation' ? 'CURATION' : selectedDetailNode.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : selectedDetailNode.data.type === 'theme_now' ? 'THEME (상영중)' : selectedDetailNode.data.type}
                             </span>
                         </div>
                         {/* Poster Box - Original Aspect Ratio */}
@@ -1216,18 +1234,26 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 </p>
                             )}
 
-                            {/* CTA Button - Integrated Player */}
-                            {selectedDetailNode.data.youtubeUrl && (
-                                <div className="pt-8 w-full px-4">
+                            <div className="pt-8 w-full px-4 flex flex-col gap-3">
+                                {selectedDetailNode.data.youtubeUrl && (
                                     <button
                                         onClick={() => setActiveVideoUrl(selectedDetailNode.data.youtubeUrl!)}
                                         className="flex items-center justify-center gap-3 w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-rose-900/40 transition-all active:scale-95 border border-rose-400/30"
                                     >
                                         <Youtube size={20} />
-                                        <span>{selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'eternal' ? 'PV 시청하기' : 'YOUTUBE 시청하기'}</span>
+                                        <span>{selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'eternal' || selectedDetailNode.data.type === 'theme_x' || selectedDetailNode.data.type === 'theme_now' ? 'PV 시청하기' : 'YOUTUBE 시청하기'}</span>
                                     </button>
-                                </div>
-                            )}
+                                )}
+                                {(selectedDetailNode.data.type === 'theme_x' || selectedDetailNode.data.type === 'theme_now') && selectedDetailNode.data.fullVideoUrl && (
+                                    <button
+                                        onClick={() => setActiveVideoUrl(selectedDetailNode.data.fullVideoUrl!)}
+                                        className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-900/40 transition-all active:scale-95 border border-indigo-400/30"
+                                    >
+                                        <Youtube size={20} />
+                                        <span>전체 다시보기</span>
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -1280,14 +1306,14 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
                                 <p className="text-xs font-bold animate-pulse uppercase tracking-widest">Loading Library...</p>
                             </div>
-                        ) : masterStories.filter(m => m.type === libraryCategory).length === 0 ? (
+                        ) : masterStories.filter(m => libraryCategory === 'theme' ? (m.type === 'theme' || m.type === 'theme_x' || m.type === 'theme_now') : m.type === libraryCategory).length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-500">
                                 <Library size={40} className="opacity-20" />
                                 <p className="text-sm font-bold opacity-40">이 카테고리에 마스터 노드가 없습니다.</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-5 gap-1.5">
-                                {masterStories.filter(m => m.type === libraryCategory).map((m) => (
+                                {masterStories.filter(m => libraryCategory === 'theme' ? (m.type === 'theme' || m.type === 'theme_x' || m.type === 'theme_now') : m.type === libraryCategory).map((m) => (
                                     <button
                                         key={m.id}
                                         onClick={() => handleImportMaster(m)}
