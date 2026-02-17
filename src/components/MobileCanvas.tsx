@@ -1358,7 +1358,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 setActiveVideoUrl(null);
                                 window.history.back();
                             }}
-                            className="absolute -top-12 right-0 p-2 text-white/80 hover:text-white transition-colors flex items-center gap-2 font-black text-[10px] uppercase tracking-widest"
+                            className="absolute -top-12 right-0 p-2 text-white/80 hover:text-white transition-all opacity-15 hover:opacity-100 duration-500 flex items-center gap-2 font-black text-[10px] uppercase tracking-widest"
                         >
                             CLOSE <X size={18} />
                         </button>

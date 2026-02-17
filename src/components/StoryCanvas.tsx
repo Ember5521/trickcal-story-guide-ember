@@ -1796,16 +1796,16 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             {
                 isPlayingVideoId && (
                     <div className="fixed inset-0 bg-black/95 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
-                        <div className="fixed top-20 right-10 z-[220] flex gap-4">
+                        <div className={`fixed top-14 right-4 z-[220] flex gap-3 transition-opacity duration-500 ${isModalFullscreen ? 'opacity-0 hover:opacity-100' : 'opacity-50 hover:opacity-100'}`}>
                             <button
                                 onClick={() => setIsModalFullscreen(!isModalFullscreen)}
-                                className="bg-white/5 hover:bg-white/10 p-3 rounded-2xl border border-white/5 text-white/40 hover:text-white transition-all backdrop-blur-md"
+                                className="bg-white/5 hover:bg-white/10 p-2.5 rounded-2xl border border-white/5 text-white/40 hover:text-white transition-all backdrop-blur-md"
                             >
                                 {isModalFullscreen ? <Minimize2 size={24} /> : <Maximize2 size={24} />}
                             </button>
                             <button
                                 onClick={() => (setPlayingVideoId(null), setPlayingVideoStart(0), setIsModalFullscreen(false))}
-                                className="bg-rose-500/10 hover:bg-rose-500/30 p-3 rounded-2xl border border-rose-500/10 text-rose-500/40 hover:text-rose-500 transition-all backdrop-blur-md"
+                                className="bg-rose-500/10 hover:bg-rose-500/30 p-2.5 rounded-2xl border border-rose-500/10 text-rose-500/40 hover:text-rose-500 transition-all backdrop-blur-md"
                             >
                                 <X size={24} />
                             </button>
