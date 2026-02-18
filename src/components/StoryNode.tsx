@@ -6,7 +6,7 @@ import { Youtube, User, Star, CheckCircle, Sprout } from 'lucide-react';
 
 export interface StoryNodeData {
     label?: string;
-    type?: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation';
+    type?: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation' | 'frontier';
     image?: string;
     youtubeUrl?: string;
     fullVideoUrl?: string;
@@ -99,6 +99,13 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             text: 'text-orange-400',
             badge: 'bg-orange-900/30 text-orange-200 border border-orange-500/30'
         };
+        if (data.type === 'frontier') return {
+            border: 'border-orange-600',
+            ring: 'ring-orange-500/50',
+            bg: 'bg-slate-900/90',
+            text: 'text-orange-400',
+            badge: 'bg-orange-950/60 text-orange-200 border border-orange-500/30'
+        };
         return {
             border: 'border-slate-700',
             ring: 'ring-indigo-500/30',
@@ -131,7 +138,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
     );
 
     const showTitle = false; // Universal title hiding as requested
-    const hasContent = (showTitle && data.label) || data.partLabel || data.youtubeUrl;
+    const hasContent = (showTitle && data.label) || data.partLabel || data.youtubeUrl || data.fullVideoUrl;
 
     const isProd = process.env.NODE_ENV === 'production';
     const basePath = isProd ? '/trickcal-story-guide-ember' : '';
@@ -269,11 +276,11 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                                     `}
                                 >
                                     <Youtube size={20} />
-                                    <span>{data.type === 'etc' || data.type === 'eternal' ? '시청하기' : 'PV 시청하기'}</span>
+                                    <span>{data.type === 'etc' || data.type === 'eternal' || data.type === 'frontier' ? '시청하기' : 'PV 시청하기'}</span>
                                 </button>
                             )}
 
-                            {(data.type === 'theme_x' || data.type === 'theme_now') && data.fullVideoUrl && (
+                            {data.fullVideoUrl && (
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();

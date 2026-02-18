@@ -7,6 +7,7 @@ import {
     Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Bell, TriangleAlert, MapPin, Lightbulb
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import YouTubeEmbed from './YouTubeEmbed';
 
 const isProd = process.env.NODE_ENV === 'production';
 const repoName = 'trickcal-story-guide-ember';
@@ -36,7 +37,7 @@ const getProxyUrl = (originalUrl: string) => {
 
 interface StoryNodeData {
     label: string;
-    type: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation';
+    type: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation' | 'frontier';
     image: string;
     youtubeUrl: string;
     fullVideoUrl?: string;
@@ -62,12 +63,21 @@ interface Node {
 export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleView: () => void, isMobileView: boolean }) {
     const [nodes, setNodes] = useState<Node[]>([]);
     const [edges, setEdges] = useState<any[]>([]);
-    const [season, setSeason] = useState(1);
-    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>('release');
+
+    // Load saved settings from localStorage
+    const savedSettings = useMemo(() => {
+        try {
+            const raw = localStorage.getItem('user_settings');
+            if (raw) return JSON.parse(raw);
+        } catch { }
+        return null;
+    }, []);
+    const [season, setSeason] = useState(savedSettings?.season ?? 1);
+    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>(savedSettings?.viewType ?? 'release');
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
-    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal' | 'annotation'>('main');
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal' | 'annotation' | 'frontier'>('main');
     const [searchQuery, setSearchQuery] = useState('');
     const [showInfo, setShowInfo] = useState(false);
     const [showMemo, setShowMemo] = useState(false);
@@ -76,6 +86,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [isAdmin, setIsAdmin] = useState(false);
     const [selectedDetailNode, setSelectedDetailNode] = useState<Node | null>(null);
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+    const [activeVideoDetails, setActiveVideoDetails] = useState<{ id: string, startTime: number, endTime: number } | null>(null);
     const [searchIndex, setSearchIndex] = useState(0);
 
     // Admin States
@@ -110,7 +121,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [isLoaded, setIsLoaded] = useState(false);
 
     // Filter State
-    const [importanceFilter, setImportanceFilter] = useState<0 | 1 | 2>(0);
+    const [importanceFilter, setImportanceFilter] = useState<0 | 1 | 2>(savedSettings?.importanceFilter ?? 0);
 
     const sessionPassword = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -258,7 +269,19 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             }
         };
         fetchUpdateLog();
+
+        // Auto-open info panel on first visit
+        const introCompleted = localStorage.getItem('intro_completed');
+        if (!introCompleted) {
+            setShowInfo(true);
+        }
     }, []);
+
+    // Persist settings changes to localStorage
+    useEffect(() => {
+        const settings = { viewType, season, importanceFilter };
+        localStorage.setItem('user_settings', JSON.stringify(settings));
+    }, [viewType, season, importanceFilter]);
 
     // Load Memo
     useEffect(() => {
@@ -356,29 +379,43 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         }
     };
 
-    const getYouTubeId = (url: string) => {
+    const getYouTubeInfo = (url: string) => {
         if (!url) return null;
-        const regExp = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-        const match = url.match(regExp);
-        return match ? match[1] : null;
-    };
+        const idRegExp = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+        const idMatch = url.match(idRegExp);
+        if (!idMatch) return null;
 
-    const getYouTubeStartTime = (url: string) => {
-        if (!url) return 0;
-        const timeMatch = url.match(/[?&](t|start)=([^&#]+)/);
-        if (!timeMatch) return 0;
+        const id = idMatch[1];
+        let startTime = 0;
+        let endTime = 0;
 
-        const timeStr = timeMatch[2];
-        if (/^\d+$/.test(timeStr)) return parseInt(timeStr, 10);
+        // Extract start time
+        const startMatch = url.match(/[?&](t|start)=([^&#]+)/);
+        if (startMatch) {
+            const timeStr = startMatch[2];
+            if (/^\d+$/.test(timeStr)) {
+                startTime = parseInt(timeStr, 10);
+            } else {
+                // Handle 1m30s etc
+                const h = timeStr.match(/(\d+)h/);
+                const m = timeStr.match(/(\d+)m/);
+                const s = timeStr.match(/(\d+)s/);
+                if (h) startTime += parseInt(h[1], 10) * 3600;
+                if (m) startTime += parseInt(m[1], 10) * 60;
+                if (s) startTime += parseInt(s[1], 10);
+            }
+        }
 
-        let totalSeconds = 0;
-        const h = timeStr.match(/(\d+)h/);
-        const m = timeStr.match(/(\d+)m/);
-        const s = timeStr.match(/(\d+)s/);
-        if (h) totalSeconds += parseInt(h[1], 10) * 3600;
-        if (m) totalSeconds += parseInt(m[1], 10) * 60;
-        if (s) totalSeconds += parseInt(s[1], 10);
-        return totalSeconds;
+        // Extract end time
+        const endMatch = url.match(/[?&]end=([^&#]+)/);
+        if (endMatch) {
+            const timeStr = endMatch[1];
+            if (/^\d+$/.test(timeStr)) {
+                endTime = parseInt(timeStr, 10);
+            }
+        }
+
+        return { id, startTime, endTime };
     };
 
     // Layout Constants (Denser Layout)
@@ -921,8 +958,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <div className="flex-1 px-2.5 min-w-0 flex flex-col justify-center gap-1">
                                             {/* Top Row: Type & Video Indicator */}
                                             <div className="flex items-center gap-1.5">
-                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' || node.data.type === 'theme_now' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'theme_x' ? 'bg-rose-500/20 text-rose-400' : node.data.type === 'eternal' ? 'bg-emerald-500/20 text-emerald-400' : node.data.type === 'annotation' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-500/20 text-slate-400'}`}>
-                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : node.data.type === 'theme_now' ? 'THEME (상영중)' : node.data.type === 'eternal' ? 'ETERNAL' : node.data.type === 'annotation' ? 'CURATION' : 'ETC'}
+                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' || node.data.type === 'theme_now' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'theme_x' ? 'bg-rose-500/20 text-rose-400' : node.data.type === 'eternal' ? 'bg-emerald-500/20 text-emerald-400' : node.data.type === 'annotation' ? 'bg-amber-500/20 text-amber-400' : node.data.type === 'frontier' ? 'bg-orange-600/20 text-orange-400' : 'bg-slate-500/20 text-slate-400'}`}>
+                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : node.data.type === 'theme_now' ? 'THEME (상영중)' : node.data.type === 'eternal' ? 'ETERNAL' : node.data.type === 'annotation' ? 'CURATION' : node.data.type === 'frontier' ? 'FRONTIER' : 'ETC'}
                                                 </span>
                                                 {node.data.youtubeUrl && (
                                                     <Youtube size={10} className="text-rose-500/60" />
@@ -1025,6 +1062,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <option value="theme_now">Theme(상영중)</option>
                                         <option value="etc">ETC</option>
                                         <option value="eternal">영원살이</option>
+                                        <option value="frontier">FRONTIER</option>
                                         <option value="annotation">큐레이션</option>
                                     </select>
                                 </div>
@@ -1044,7 +1082,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     </label>
                                 </div>
                             </div>
-                            {(formData.type === 'theme' || formData.type === 'theme_x' || formData.type === 'eternal') && (
+                            {(formData.type === 'theme' || formData.type === 'theme_x' || formData.type === 'eternal' || formData.type === 'frontier') && (
                                 <div>
                                     <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">Protagonist</label>
                                     <input type="text" value={formData.protagonist || ''} onChange={e => setFormData({ ...formData, protagonist: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="에르핀, 네르 등" />
@@ -1057,7 +1095,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     <input type="text" value={formData.youtubeUrl} onChange={e => setFormData({ ...formData, youtubeUrl: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-xs font-mono outline-none" placeholder="PV https://..." />
                                 </div>
                                 <div>
-                                    <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">Full Replay (Theme X)</label>
+                                    <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">Full Replay (All Types)</label>
                                     <input type="text" value={formData.fullVideoUrl || ''} onChange={e => setFormData({ ...formData, fullVideoUrl: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-xs font-mono outline-none" placeholder="full https://..." />
                                 </div>
                             </div>
@@ -1170,24 +1208,81 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             )}
 
             {showInfo && (
-                <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full relative">
-                        <button onClick={() => setShowInfo(false)} className="absolute top-4 right-4 text-slate-500">
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                    <div className="bg-slate-900/95 border border-slate-700/50 rounded-2xl p-6 max-w-sm w-full relative backdrop-blur-xl shadow-2xl">
+                        <button onClick={() => { setShowInfo(false); localStorage.setItem('intro_completed', 'true'); }} className="absolute top-4 right-4 text-slate-500">
                             <X size={20} />
                         </button>
-                        <h2 className="text-lg font-black mb-4 uppercase italic text-indigo-400">Notice</h2>
-                        <div className="space-y-3">
-                            <p className="text-[11px] leading-relaxed text-slate-300">
-                                <b>가이드 안내</b><br />
+
+                        <div className="flex items-center gap-2 mb-2">
+                            <button
+                                className="p-2 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 cursor-default"
+                            >
+                                <Info size={16} />
+                            </button>
+                            <h2 className="text-lg font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                                트릭컬 스토리 가이드맵 - Ember
+                            </h2>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mb-4"></p>
+
+                        {/* Order Selection Buttons */}
+                        <div className="flex flex-col gap-2 mb-4">
+                            <button
+                                onClick={() => {
+                                    setViewType('release');
+                                    localStorage.setItem('intro_completed', 'true');
+                                    setShowInfo(false);
+                                }}
+                                className={`group relative p-4 rounded-xl border-2 transition-all duration-300 text-left overflow-hidden ${viewType === 'release'
+                                    ? 'border-sky-500 bg-sky-500/10'
+                                    : 'border-slate-700 bg-slate-800/50'
+                                    }`}
+                            >
+                                <div className="text-sm font-black text-sky-400 mb-1">📅 출시 순서</div>
+                                <p className="text-[10px] leading-relaxed text-slate-400">
+                                    <span className="font-bold text-slate-300">실제 출시되었던 순서 기록</span><br />
+                                    Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.
+                                </p>
+                                {viewType === 'release' && (
+                                    <div className="absolute top-2 right-2 w-4 h-4 bg-sky-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-[8px] font-bold">✓</span>
+                                    </div>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setViewType('recommended');
+                                    localStorage.setItem('intro_completed', 'true');
+                                    setShowInfo(false);
+                                }}
+                                className={`group relative p-4 rounded-xl border-2 transition-all duration-300 text-left overflow-hidden ${viewType === 'recommended'
+                                    ? 'border-amber-500 bg-amber-500/10'
+                                    : 'border-slate-700 bg-slate-800/50'
+                                    }`}
+                            >
+                                <div className="text-sm font-black text-amber-400 mb-1">⭐ 추천 순서</div>
+                                <p className="text-[10px] leading-relaxed text-slate-400">
+                                    <span className="font-bold text-slate-300">새로오신 교주님들께 추천</span><br />
+                                    극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 추천하는 진행 순서입니다.
+                                </p>
+                                {viewType === 'recommended' && (
+                                    <div className="absolute top-2 right-2 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-[8px] font-bold">✓</span>
+                                    </div>
+                                )}
+                            </button>
+                        </div>
+
+                        {/* Guide Info */}
+                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
+                            <p className="text-[10px] leading-relaxed text-slate-400">
+                                <b className="text-slate-300">가이드 안내</b><br />
                                 • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
-                                • 출시 순서: Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.<br />
-                                • 추천 순서: 극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 추천하는 진행 순서입니다.<br />
+                                • 헤더의 드롭다운에서 순서, 필터, 시즌을 언제든지 변경할 수 있습니다.<br />
                                 • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                             </p>
                         </div>
-                        <button onClick={() => setShowInfo(false)} className="w-full mt-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase shadow-lg shadow-indigo-600/20 active:scale-[0.98] transition-all">
-                            Check
-                        </button>
                     </div>
                 </div>
             )}
@@ -1208,8 +1303,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     <div className="w-full max-w-lg flex flex-col items-center px-6 my-auto animate-in zoom-in-95 duration-300">
                         {/* Status Badge Above Image */}
                         <div className="mb-4">
-                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'theme_now' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'theme_x' ? 'bg-rose-600/60 text-white' : selectedDetailNode.data.type === 'eternal' ? 'bg-emerald-600/60 text-white' : selectedDetailNode.data.type === 'annotation' ? 'bg-amber-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
-                                {selectedDetailNode.data.type === 'eternal' ? 'ETERNAL' : selectedDetailNode.data.type === 'annotation' ? 'CURATION' : selectedDetailNode.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : selectedDetailNode.data.type === 'theme_now' ? 'THEME (상영중)' : selectedDetailNode.data.type}
+                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'theme_now' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'theme_x' ? 'bg-rose-600/60 text-white' : selectedDetailNode.data.type === 'eternal' ? 'bg-emerald-600/60 text-white' : selectedDetailNode.data.type === 'frontier' ? 'bg-orange-600/60 text-white' : selectedDetailNode.data.type === 'annotation' ? 'bg-amber-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
+                                {selectedDetailNode.data.type === 'eternal' ? 'ETERNAL' : selectedDetailNode.data.type === 'annotation' ? 'CURATION' : selectedDetailNode.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : selectedDetailNode.data.type === 'theme_now' ? 'THEME (상영중)' : selectedDetailNode.data.type === 'frontier' ? 'FRONTIER' : selectedDetailNode.data.type}
                             </span>
                         </div>
                         {/* Poster Box - Original Aspect Ratio */}
@@ -1237,16 +1332,28 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             <div className="pt-8 w-full px-4 flex flex-col gap-3">
                                 {selectedDetailNode.data.youtubeUrl && (
                                     <button
-                                        onClick={() => setActiveVideoUrl(selectedDetailNode.data.youtubeUrl!)}
+                                        onClick={() => {
+                                            const info = getYouTubeInfo(selectedDetailNode.data.youtubeUrl!);
+                                            if (info) {
+                                                setActiveVideoUrl(selectedDetailNode.data.youtubeUrl!);
+                                                setActiveVideoDetails(info);
+                                            }
+                                        }}
                                         className="flex items-center justify-center gap-3 w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-rose-900/40 transition-all active:scale-95 border border-rose-400/30"
                                     >
                                         <Youtube size={20} />
-                                        <span>{selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'eternal' || selectedDetailNode.data.type === 'theme_x' || selectedDetailNode.data.type === 'theme_now' ? 'PV 시청하기' : 'YOUTUBE 시청하기'}</span>
+                                        <span>{selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'eternal' || selectedDetailNode.data.type === 'theme_x' || selectedDetailNode.data.type === 'theme_now' || selectedDetailNode.data.type === 'frontier' ? 'PV 시청하기' : 'YOUTUBE 시청하기'}</span>
                                     </button>
                                 )}
-                                {(selectedDetailNode.data.type === 'theme_x' || selectedDetailNode.data.type === 'theme_now') && selectedDetailNode.data.fullVideoUrl && (
+                                {selectedDetailNode.data.fullVideoUrl && (
                                     <button
-                                        onClick={() => setActiveVideoUrl(selectedDetailNode.data.fullVideoUrl!)}
+                                        onClick={() => {
+                                            const info = getYouTubeInfo(selectedDetailNode.data.fullVideoUrl!);
+                                            if (info) {
+                                                setActiveVideoUrl(selectedDetailNode.data.fullVideoUrl!);
+                                                setActiveVideoDetails(info);
+                                            }
+                                        }}
                                         className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-900/40 transition-all active:scale-95 border border-indigo-400/30"
                                     >
                                         <Youtube size={20} />
@@ -1285,7 +1392,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         </div>
 
                         <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
-                            {(['main', 'theme', 'etc', 'eternal'] as const).map((cat) => (
+                            {(['main', 'theme', 'etc', 'eternal', 'frontier'] as const).map((cat) => (
                                 <button
                                     key={cat}
                                     onClick={() => setLibraryCategory(cat)}
@@ -1294,7 +1401,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         : 'text-slate-500 hover:text-slate-300'
                                         }`}
                                 >
-                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : cat === 'eternal' ? 'Eternal' : 'ETC'}
+                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : cat === 'eternal' ? 'Eternal' : cat === 'frontier' ? 'Frontier' : 'ETC'}
                                 </button>
                             ))}
                         </div>
@@ -1346,16 +1453,21 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             {activeVideoUrl && (
                 <div className="fixed inset-0 z-[500] flex items-center justify-center bg-slate-950/60 backdrop-blur-2xl animate-in fade-in duration-300 p-4">
                     <div className="w-full max-w-4xl relative aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10">
-                        <iframe
-                            src={`https://www.youtube.com/embed/${getYouTubeId(activeVideoUrl)}?autoplay=1&rel=0${activeVideoUrl ? (getYouTubeStartTime(activeVideoUrl) > 0 ? `&start=${getYouTubeStartTime(activeVideoUrl)}` : '') : ''}`}
+                        <YouTubeEmbed
+                            videoId={activeVideoDetails?.id || ''}
+                            startTime={activeVideoDetails?.startTime}
+                            endTime={activeVideoDetails?.endTime}
                             className="w-full h-full"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            title="YouTube Video"
+                            onClose={() => {
+                                setActiveVideoUrl(null);
+                                setActiveVideoDetails(null);
+                                window.history.back();
+                            }}
                         />
                         <button
                             onClick={() => {
                                 setActiveVideoUrl(null);
+                                setActiveVideoDetails(null);
                                 window.history.back();
                             }}
                             className="absolute -top-12 right-0 p-2 text-white/80 hover:text-white transition-all opacity-15 hover:opacity-100 duration-500 flex items-center gap-2 font-black text-[10px] uppercase tracking-widest"
@@ -1389,7 +1501,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         </button>
                     </header>
 
-                    <div className="flex-grow overflow-y-auto p-6 bg-slate-950">
+                    <div className="flex-grow overflow-y-auto min-h-0 p-6 bg-slate-950 custom-scrollbar">
                         {isAdmin ? (
                             <div className="space-y-4">
                                 <div className="flex items-center gap-2 mb-2 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 text-xs font-bold italic">

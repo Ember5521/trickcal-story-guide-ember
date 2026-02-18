@@ -5,10 +5,11 @@ import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
     X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone, Bell,
-    Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin
+    Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin, HelpCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CurationNode from '@/components/CurationNode';
+import YouTubeEmbed from './YouTubeEmbed';
 import ReactFlow, {
     Background,
     applyEdgeChanges,
@@ -80,9 +81,142 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [nodes, setNodes] = useState<Node<StoryNodeData>[]>(initialNodes);
     const [edges, setEdges] = useState<Edge[]>(initialEdges);
     const [isAdmin, setIsAdmin] = useState(false);
-    const [season, setSeason] = useState(1);
-    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>('release');
     const [isLoaded, setIsLoaded] = useState(false);
+
+    // Load saved settings from localStorage
+    const savedSettings = useMemo(() => {
+        try {
+            const raw = localStorage.getItem('user_settings');
+            if (raw) return JSON.parse(raw);
+        } catch { }
+        return null;
+    }, []);
+    const [season, setSeason] = useState(savedSettings?.season ?? 1);
+    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>(savedSettings?.viewType ?? 'release');
+    const [showInfo, setShowInfo] = useState(false);
+    const [showTutorial, setShowTutorial] = useState(false);
+    const [tutorialPositions, setTutorialPositions] = useState<{ key: string; label: string; x: number; y: number; side: 'bottom' | 'top'; anchorX: number; anchorY: number; estH: number }[]>([]);
+
+    // Elevate tutorial-tagged buttons above overlay when tutorial is active
+    useEffect(() => {
+        if (showTutorial) {
+            const els = document.querySelectorAll('[data-tutorial]');
+            els.forEach(el => {
+                const htmlEl = el as HTMLElement;
+                htmlEl.style.position = 'relative';
+                htmlEl.style.zIndex = '500';
+                htmlEl.style.borderRadius = htmlEl.style.borderRadius || '12px';
+            });
+            return () => {
+                els.forEach(el => {
+                    const htmlEl = el as HTMLElement;
+                    htmlEl.style.position = '';
+                    htmlEl.style.zIndex = '';
+                });
+            };
+        }
+    }, [showTutorial]);
+
+    // Unified function to collect and resolve tutorial element positions
+    const updateTutorialPositions = useCallback(() => {
+        const TOOLTIP_PAD = 8; // gap between button and tooltip
+        const SCREEN_PAD = 8; // min distance from screen edge
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        // Step 1: Collect raw positions from DOM (only visible elements)
+        const raw: { key: string; label: string; anchorX: number; anchorY: number; btnBottom: number; btnTop: number; side: 'bottom' | 'top'; estW: number; estH: number }[] = [];
+        document.querySelectorAll('[data-tutorial]').forEach(el => {
+            const rect = el.getBoundingClientRect();
+            // Critical fix: Skip hidden elements (important for mobile view layout differences)
+            if (rect.width === 0 || rect.height === 0) return;
+
+            const key = el.getAttribute('data-tutorial') || '';
+            const label = el.getAttribute('data-tutorial-label') || '';
+            const side: 'bottom' | 'top' = rect.top < vh / 2 ? 'bottom' : 'top';
+
+            const lines = label.split('\n');
+            const maxLineLength = Math.max(...lines.map(l => l.length));
+            const estW = maxLineLength * 13 + 24;
+            const estH = lines.length * 18 + 12;
+
+            raw.push({
+                key, label,
+                anchorX: rect.left + rect.width / 2,
+                anchorY: side === 'bottom' ? rect.bottom : rect.top,
+                btnBottom: rect.bottom,
+                btnTop: rect.top,
+                side, estW, estH
+            });
+        });
+
+        // Step 2: Clamp X to viewport bounds, set Y with padding from button
+        const positioned = raw.map(r => {
+            const halfW = r.estW / 2;
+            let x = Math.max(SCREEN_PAD + halfW, Math.min(vw - SCREEN_PAD - halfW, r.anchorX));
+            let y = r.side === 'bottom' ? r.btnBottom + TOOLTIP_PAD + 6 : r.btnTop - TOOLTIP_PAD - r.estH - 6;
+            return { ...r, x, y };
+        });
+
+        // Step 3: Resolve overlaps (multi-pass to handle chain reactions)
+        positioned.sort((a, b) => a.x - b.x);
+        for (let pass = 0; pass < 3; pass++) {
+            let changed = false;
+            for (let i = 1; i < positioned.length; i++) {
+                for (let j = 0; j < i; j++) {
+                    const a = positioned[j];
+                    const b = positioned[i];
+                    if (a.side !== b.side) continue;
+
+                    const aLeft = a.x - a.estW / 2 - 4;
+                    const aRight = a.x + a.estW / 2 + 4;
+                    const bLeft = b.x - b.estW / 2 - 4;
+                    const bRight = b.x + b.estW / 2 + 4;
+                    const hOverlap = aLeft < bRight && bLeft < aRight;
+                    if (!hOverlap) continue;
+
+                    const aTop = a.y;
+                    const aBot = a.y + a.estH;
+                    const bTop = b.y;
+                    const bBot = b.y + b.estH;
+
+                    if (aTop < bBot && bTop < aBot) {
+                        const oldY = b.y;
+                        if (b.side === 'bottom') {
+                            b.y = aBot + 8;
+                        } else {
+                            b.y = aTop - b.estH - 8;
+                        }
+                        if (Math.abs(b.y - oldY) > 0.1) changed = true;
+                    }
+                }
+            }
+            if (!changed) break;
+        }
+
+        // Step 4: Clamp Y to viewport
+        const finalItems = positioned.map(p => ({
+            key: p.key,
+            label: p.label,
+            x: p.x,
+            y: Math.max(SCREEN_PAD, Math.min(vh - SCREEN_PAD - p.estH, p.y)),
+            side: p.side,
+            anchorX: p.anchorX,
+            anchorY: p.anchorY,
+            estH: p.estH
+        }));
+
+        setTutorialPositions(finalItems);
+    }, []);
+
+    // Effect to update positions on window resize or when tutorial starts
+    useEffect(() => {
+        if (showTutorial) {
+            updateTutorialPositions();
+            window.addEventListener('resize', updateTutorialPositions);
+            return () => window.removeEventListener('resize', updateTutorialPositions);
+        }
+    }, [showTutorial, updateTutorialPositions]);
 
     // UI State
     const [showForm, setShowForm] = useState(false);
@@ -91,6 +225,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
     const [isPlayingVideoId, setPlayingVideoId] = useState<string | null>(null);
     const [playingVideoStart, setPlayingVideoStart] = useState<number>(0);
+    const [playingVideoEnd, setPlayingVideoEnd] = useState<number>(0);
     const [isModalFullscreen, setIsModalFullscreen] = useState(false);
     const [edgeType, setEdgeType] = useState<'step' | 'straight'>('step');
     const [isUploading, setIsUploading] = useState(false);
@@ -101,7 +236,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [memoText, setMemoText] = useState('');
 
     // Filter State
-    const [importanceFilter, setImportanceFilter] = useState<0 | 1 | 2>(0);
+    const [importanceFilter, setImportanceFilter] = useState<0 | 1 | 2>(savedSettings?.importanceFilter ?? 0);
 
     // Image Browser State
     const [showGallery, setShowGallery] = useState(false);
@@ -111,7 +246,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
-    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal' | 'annotation'>('main');
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal' | 'annotation' | 'frontier'>('main');
     const [masterSearchQuery, setMasterSearchQuery] = useState('');
     const [showUpdateLog, setShowUpdateLog] = useState(false);
     const [updateLogContent, setUpdateLogContent] = useState('');
@@ -138,10 +273,12 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
         const id = idMatch[1];
         let startTime = 0;
+        let endTime = 0;
 
-        const timeMatch = url.match(/[?&](t|start)=([^&#]+)/);
-        if (timeMatch) {
-            const timeStr = timeMatch[2];
+        // Extract start time
+        const startMatch = url.match(/[?&](t|start)=([^&#]+)/);
+        if (startMatch) {
+            const timeStr = startMatch[2];
             if (/^\d+$/.test(timeStr)) {
                 startTime = parseInt(timeStr, 10);
             } else {
@@ -154,7 +291,17 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 if (s) startTime += parseInt(s[1], 10);
             }
         }
-        return { id, startTime };
+
+        // Extract end time
+        const endMatch = url.match(/[?&]end=([^&#]+)/);
+        if (endMatch) {
+            const timeStr = endMatch[1];
+            if (/^\d+$/.test(timeStr)) {
+                endTime = parseInt(timeStr, 10);
+            }
+        }
+
+        return { id, startTime, endTime };
     };
 
     useEffect(() => {
@@ -192,7 +339,19 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
         fetchUpdateLog();
         checkDB();
+
+        // Auto-open info panel on first visit
+        const introCompleted = localStorage.getItem('intro_completed');
+        if (!introCompleted) {
+            setShowInfo(true);
+        }
     }, []);
+
+    // Persist settings changes to localStorage
+    useEffect(() => {
+        const settings = { viewType, season, importanceFilter };
+        localStorage.setItem('user_settings', JSON.stringify(settings));
+    }, [viewType, season, importanceFilter]);
 
     // 갤러리가 열릴 때 스토리지 이미지를 페칭하는 트리거
     useEffect(() => {
@@ -207,6 +366,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         if (info) {
             setPlayingVideoId(info.id);
             setPlayingVideoStart(info.startTime);
+            setPlayingVideoEnd(info.endTime);
         }
     }, []);
 
@@ -978,6 +1138,17 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         if (savedMemo) setMemoText(savedMemo);
     }, [season, viewType, isAdmin]);
 
+    // Trigger viewport adjustment after data loads to force ReactFlow rendering
+    useEffect(() => {
+        if (isLoaded && nodes.length > 0) {
+            // Use a small delay to ensure ReactFlow has processed the new nodes
+            const timer = setTimeout(() => {
+                initialFocus();
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [isLoaded]); // intentionally only depend on isLoaded to fire once per load cycle
+
     // Save Memo automatically whenever it changes
     useEffect(() => {
         try {
@@ -1423,6 +1594,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             if (info) {
                                 setPlayingVideoId(info.id);
                                 setPlayingVideoStart(info.startTime);
+                                setPlayingVideoEnd(info.endTime);
                             }
                         }
                     } as StoryNodeData,
@@ -1574,6 +1746,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     if (info) {
                         setPlayingVideoId(info.id);
                         setPlayingVideoStart(info.startTime);
+                        setPlayingVideoEnd(info.endTime);
                     }
                 }
             } as StoryNodeData,
@@ -1606,25 +1779,22 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 <div className="flex items-center justify-between w-full md:w-auto gap-2 shrink-0">
                     {/* Left Group */}
                     <div className="flex items-center gap-1.5 md:gap-2">
-                        <div className="group relative flex items-center justify-center">
-                            <div className="p-2 md:p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 cursor-help transition-all border border-slate-700">
-                                <Info size={16} className="md:w-[18px] md:h-[18px]" />
-                            </div>
-                            <div className="absolute top-full left-0 mt-2 w-64 p-3 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[100] scale-95 group-hover:scale-100 origin-top-left pointer-events-none">
-                                <p className="text-xs leading-relaxed text-slate-300">
-                                    <b>가이드 안내</b><br />
-                                    • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
-                                    • 출시 순서: Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.<br />
-                                    • 추천 순서: 극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 추천하는 진행 순서입니다.<br />
-                                    • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
-                                </p>
-                            </div>
-                        </div>
+                        <button
+                            onClick={() => setShowInfo(true)}
+                            className="p-2 md:p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 transition-all border border-slate-700"
+                            title="가이드 안내"
+                            data-tutorial="info"
+                            data-tutorial-label="가이드 정보"
+                        >
+                            <Info size={16} className="md:w-[18px] md:h-[18px]" />
+                        </button>
 
                         <button
                             onClick={onToggleView}
                             className="p-2 md:p-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 rounded-xl border border-slate-700 transition-all shrink-0"
                             title="Mobile View"
+                            data-tutorial="mobile"
+                            data-tutorial-label="모바일 뷰로 전환"
                         >
                             <Smartphone size={16} className="md:w-[18px] md:h-[18px]" />
                         </button>
@@ -1643,6 +1813,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-indigo-400 hover:bg-slate-700'
                                     }`}
                                 title="업데이트 노트"
+                                data-tutorial="bell"
+                                data-tutorial-label="업데이트 노트 확인"
                             >
                                 <Bell size={16} className={`md:w-[18px] md:h-[18px] ${hasNewUpdate ? 'animate-pulse' : ''}`} />
                                 {hasNewUpdate && (
@@ -1701,10 +1873,12 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         onClick={goToLastWatched}
                         className="p-2 md:p-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 rounded-xl border border-slate-700 transition-all active:scale-95 group shadow-sm flex items-center justify-center shrink-0"
                         title="마지막으로 본 스토리로 이동"
+                        data-tutorial="pin"
+                        data-tutorial-label="마지막으로 본 스토리로 이동"
                     >
                         <MapPin size={16} className="md:w-[18px] md:h-[18px] group-hover:animate-bounce" />
                     </button>
-                    <div className="flex-1 md:flex-none flex items-center bg-slate-800/80 rounded-xl px-3 md:px-4 border border-slate-700 transition-all backdrop-blur-sm group overflow-hidden">
+                    <div className="flex-1 md:flex-none flex items-center bg-slate-800/80 rounded-xl px-3 md:px-4 border border-slate-700 transition-all backdrop-blur-sm group overflow-hidden" data-tutorial="search" data-tutorial-label="스토리 제목 검색">
                         <Search className="text-slate-400 group-focus-within:text-indigo-400 shrink-0 md:w-[18px] md:h-[18px]" size={16} />
                         <input type="text" placeholder="검색..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="bg-transparent border-none py-1.5 md:py-2 px-2 md:px-3 outline-none w-full md:w-64 lg:w-80 text-xs md:text-sm" />
                         {searchQuery && <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-white mr-1 text-sm">✕</button>}
@@ -1717,6 +1891,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-indigo-400 hover:bg-slate-700'
                             }`}
                         title="메모장 열기"
+                        data-tutorial="memo"
+                        data-tutorial-label="메모장"
                     >
                         <StickyNote size={16} className="md:w-[18px] md:h-[18px]" />
                     </button>
@@ -1738,6 +1914,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         value={importanceFilter}
                         onChange={(e) => setImportanceFilter(Number(e.target.value) as 0 | 1 | 2)}
                         className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
+                        data-tutorial="filter"
+                        data-tutorial-label={`중요도별 필터링\n- 모두: 모든 스토리 (제일 추천드립니다)\n- 권장: 원활한 메인 스토리 진행을 위한 떡밥, 변화 위주\n- 압축: 핵심 위주로 진도만 따라잡기 (추천 X)`}
                     >
                         <option value={0} className="bg-slate-900">필터: 모두</option>
                         <option value={1} className="bg-slate-900">필터: 권장</option>
@@ -1747,6 +1925,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         value={viewType}
                         onChange={(e) => setViewType(e.target.value as any)}
                         className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
+                        data-tutorial="order"
+                        data-tutorial-label="출시순 / 추천순 변경"
                     >
                         <option value="release" className="bg-slate-900">순서: 출시</option>
                         <option value="recommended" className="bg-slate-900">순서: 추천</option>
@@ -1755,6 +1935,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         value={season}
                         onChange={e => setSeason(Number(e.target.value))}
                         className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
+                        data-tutorial="season"
+                        data-tutorial-label="시즌 변경"
                     >
                         <option value={1}>시즌: 1</option>
                         <option value={2}>시즌: 2</option>
@@ -1804,16 +1986,24 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 {isModalFullscreen ? <Minimize2 size={24} /> : <Maximize2 size={24} />}
                             </button>
                             <button
-                                onClick={() => (setPlayingVideoId(null), setPlayingVideoStart(0), setIsModalFullscreen(false))}
+                                onClick={() => (setPlayingVideoId(null), setPlayingVideoStart(0), setPlayingVideoEnd(0), setIsModalFullscreen(false))}
                                 className="bg-rose-500/10 hover:bg-rose-500/30 p-2.5 rounded-2xl border border-rose-500/10 text-rose-500/40 hover:text-rose-500 transition-all backdrop-blur-md"
                             >
                                 <X size={24} />
                             </button>
                         </div>
                         <div className={`relative bg-black shadow-2xl overflow-hidden transition-all duration-500 ${isModalFullscreen ? 'w-full h-full' : 'w-full max-w-5xl aspect-video rounded-3xl border border-white/10'}`}>
-                            <iframe src={`https://www.youtube.com/embed/${isPlayingVideoId}?autoplay=1&rel=0${playingVideoStart > 0 ? `&start=${playingVideoStart}` : ''}`} className="w-full h-full" allowFullScreen />
+                            {isPlayingVideoId && (
+                                <YouTubeEmbed
+                                    videoId={isPlayingVideoId}
+                                    startTime={playingVideoStart}
+                                    endTime={playingVideoEnd}
+                                    className="w-full h-full"
+                                    onClose={() => (setPlayingVideoId(null), setPlayingVideoStart(0), setPlayingVideoEnd(0), setIsModalFullscreen(false))}
+                                />
+                            )}
                         </div>
-                        {!isModalFullscreen && <div className="absolute inset-0 -z-10" onClick={() => (setPlayingVideoId(null), setPlayingVideoStart(0))} />}
+                        {!isModalFullscreen && <div className="absolute inset-0 -z-10" onClick={() => (setPlayingVideoId(null), setPlayingVideoStart(0), setPlayingVideoEnd(0))} />}
                     </div>
                 )
             }
@@ -1925,7 +2115,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             </div>
 
                             <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
-                                {(['main', 'theme', 'etc', 'eternal', 'annotation'] as const).map((cat) => (
+                                {(['main', 'theme', 'etc', 'eternal', 'frontier', 'annotation'] as const).map((cat) => (
                                     <button
                                         key={cat}
                                         onClick={() => setLibraryCategory(cat)}
@@ -1937,7 +2127,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         {cat === 'main' ? '메인' :
                                             cat === 'theme' ? '테마' :
                                                 cat === 'etc' ? '기타' :
-                                                    cat === 'eternal' ? '영원살이' : '큐레이션'}
+                                                    cat === 'eternal' ? '영원살이' :
+                                                        cat === 'frontier' ? 'FRONTIER' : '큐레이션'}
                                     </button>
                                 ))}
                             </div>
@@ -2000,7 +2191,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                                 m.type === 'theme_now' ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/20' :
                                                                     m.type === 'eternal' ? 'bg-amber-600 text-white border border-amber-400/50' :
                                                                         m.type === 'annotation' ? 'bg-orange-600 text-white' :
-                                                                            'bg-emerald-500/80 text-white'
+                                                                            m.type === 'frontier' ? 'bg-orange-600/90 text-white shadow-lg shadow-orange-500/20' :
+                                                                                'bg-emerald-500/80 text-white'
                                                         }`}>
                                                         {m.type === 'theme_x' ? '테마(미개봉)' :
                                                             m.type === 'theme_now' ? '테마(상영중)' : m.type}
@@ -2054,6 +2246,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             <option value="theme_now">테마극장(상영중)</option>
                                             <option value="etc">사복/기타</option>
                                             <option value="eternal">영원살이</option>
+                                            <option value="frontier">FRONTIER</option>
                                             <option value="annotation">큐레이션</option>
                                         </select>
                                     </div>
@@ -2406,7 +2599,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             </button>
                         </header>
 
-                        <div className="flex-grow overflow-y-auto p-8 custom-scrollbar">
+                        <div className="flex-grow overflow-y-auto min-h-0 p-8 custom-scrollbar">
                             {isAdmin ? (
                                 <div className="space-y-4">
                                     <div className="flex items-center gap-2 mb-2 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 text-xs font-bold italic">
@@ -2475,6 +2668,209 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     </div>
                 </div>
             )}
+            {/* Info / Intro Modal */}
+            {showInfo && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                    <div className="bg-slate-900/95 border border-slate-700/50 rounded-3xl p-8 max-w-lg w-full relative backdrop-blur-xl shadow-2xl shadow-black/50 animate-in fade-in zoom-in-95 duration-300">
+                        <button onClick={() => { setShowInfo(false); localStorage.setItem('intro_completed', 'true'); }} className="absolute top-5 right-5 text-slate-500 hover:text-white transition-colors">
+                            <X size={22} />
+                        </button>
+
+                        <div className="flex items-center gap-3 mb-2">
+                            <button
+                                className="p-2 md:p-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 cursor-default"
+                            >
+                                <Info size={16} className="md:w-[18px] md:h-[18px]" />
+                            </button>
+                            <h2 className="text-2xl font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                                트릭컬 스토리 가이드맵 - Ember
+                            </h2>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-6"></p>
+
+                        {/* Order Selection Buttons */}
+                        <div className="grid grid-cols-2 gap-3 mb-6">
+                            <button
+                                onClick={() => {
+                                    setViewType('release');
+                                    localStorage.setItem('intro_completed', 'true');
+                                    setShowInfo(false);
+                                }}
+                                className={`group relative p-5 rounded-2xl border-2 transition-all duration-300 text-left overflow-hidden ${viewType === 'release'
+                                    ? 'border-sky-500 bg-sky-500/10 shadow-lg shadow-sky-500/10'
+                                    : 'border-slate-700 bg-slate-800/50 hover:border-sky-500/50 hover:bg-sky-500/5'
+                                    }`}
+                            >
+                                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-sky-500/10 to-transparent rounded-bl-full" />
+                                <div className="text-lg font-black text-sky-400 mb-2">📅 출시 순서<br /><span className="text-[11px] font-semibold text-sky-400/70">실제 출시되었던 순서 기록</span></div>
+                                <p className="text-[11px] leading-relaxed text-slate-400">
+                                    Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.
+                                </p>
+                                {viewType === 'release' && (
+                                    <div className="absolute top-3 right-3 w-5 h-5 bg-sky-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs font-bold">✓</span>
+                                    </div>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setViewType('recommended');
+                                    localStorage.setItem('intro_completed', 'true');
+                                    setShowInfo(false);
+                                }}
+                                className={`group relative p-5 rounded-2xl border-2 transition-all duration-300 text-left overflow-hidden ${viewType === 'recommended'
+                                    ? 'border-amber-500 bg-amber-500/10 shadow-lg shadow-amber-500/10'
+                                    : 'border-slate-700 bg-slate-800/50 hover:border-amber-500/50 hover:bg-amber-500/5'
+                                    }`}
+                            >
+                                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-full" />
+                                <div className="text-lg font-black text-amber-400 mb-2">⭐ 추천 순서<br /><span className="text-[11px] font-semibold text-amber-400/70">새로오신 교주님들께 추천</span></div>
+                                <p className="text-[11px] leading-relaxed text-slate-400">
+                                    극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 추천하는 진행 순서입니다.
+                                </p>
+                                {viewType === 'recommended' && (
+                                    <div className="absolute top-3 right-3 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs font-bold">✓</span>
+                                    </div>
+                                )}
+                            </button>
+                        </div>
+
+                        {/* Tutorial Button */}
+                        <button
+                            onClick={() => {
+                                setShowInfo(false);
+                                localStorage.setItem('intro_completed', 'true');
+                                // Collect positions of all tutorial-tagged elements with overlap/clipping resolution
+                                setTimeout(() => {
+                                    setShowTutorial(true); return; // Use new updateTutorialPositions logic
+
+
+                                    /* // Step 1: Collect raw positions from DOM
+                                    const raw: { key: string; label: string; anchorX: number; anchorY: number; btnBottom: number; btnTop: number; side: 'bottom' | 'top'; estW: number; estH: number }[] = [];
+                                    document.querySelectorAll('[data-tutorial]').forEach(el => {
+                                        const rect = el.getBoundingClientRect();
+                                        const key = el.getAttribute('data-tutorial') || '';
+                                        const label = el.getAttribute('data-tutorial-label') || '';
+                                        const side: 'bottom' | 'top' = rect.top < vh / 2 ? 'bottom' : 'top';
+
+                                        const lines = label.split('\n');
+                                        const maxLineLength = Math.max(...lines.map(l => l.length));
+                                        const estW = maxLineLength * 7.5 + 24;
+                                        const estH = lines.length * 16 + 12;
+
+                                        raw.push({
+                                            key, label,
+                                            anchorX: rect.left + rect.width / 2,
+                                            anchorY: side === 'bottom' ? rect.bottom : rect.top,
+                                            btnBottom: rect.bottom,
+                                            btnTop: rect.top,
+                                            side, estW, estH
+                                        });
+                                    }); */
+
+
+
+
+                                }, 350);
+                            }}
+                            className="w-full py-3 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 text-sm font-bold transition-all flex items-center justify-center gap-2 mb-4"
+                        >
+                            <HelpCircle size={16} />
+                            버튼 가이드 보기
+                        </button>
+
+                        {/* Guide Info */}
+                        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+                            <p className="text-[11px] leading-relaxed text-slate-400">
+                                <b className="text-slate-300">가이드 안내</b><br />
+                                • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
+                                • 헤더의 드롭다운에서 순서, 필터, 시즌을 언제든지 변경할 수 있습니다.<br />
+                                • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Tutorial Overlay */}
+            {showTutorial && (
+                <div
+                    className="fixed inset-0 z-[400] cursor-pointer"
+                    onClick={() => setShowTutorial(false)}
+                >
+                    {/* Dismiss hint */}
+                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-slate-400 text-xs font-medium bg-slate-800/80 px-4 py-2 rounded-full border border-slate-700 backdrop-blur-sm animate-pulse">
+                        화면을 클릭하면 닫힙니다
+                    </div>
+
+                    {/* SVG connector lines from buttons to tooltips */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
+                        {tutorialPositions.map((item, idx) => {
+                            const tooltipCenterY = item.y + item.estH / 2; // center of tooltip
+                            return (
+                                <line
+                                    key={`line-${item.key}`}
+                                    x1={item.anchorX}
+                                    y1={item.anchorY}
+                                    x2={item.x}
+                                    y2={tooltipCenterY}
+                                    stroke="rgba(99,102,241,0.6)"
+                                    strokeWidth="1.5"
+                                    strokeDasharray="4,3"
+                                    style={{ animation: `tutorialFadeIn 0.4s ease-out ${idx * 0.06}s both` }}
+                                />
+                            );
+                        })}
+                    </svg>
+
+                    {/* Anchor dots on buttons */}
+                    {tutorialPositions.map((item, idx) => (
+                        <div
+                            key={`dot-${item.key}`}
+                            className="absolute pointer-events-none"
+                            style={{
+                                left: item.anchorX,
+                                top: item.anchorY,
+                                transform: 'translate(-50%, -50%)',
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                background: 'rgba(99,102,241,0.9)',
+                                boxShadow: '0 0 8px rgba(99,102,241,0.6)',
+                                animation: `tutorialFadeIn 0.4s ease-out ${idx * 0.06}s both`,
+                                zIndex: 2
+                            }}
+                        />
+                    ))}
+
+                    {/* Tooltip labels */}
+                    {tutorialPositions.map((item, idx) => (
+                        <div
+                            key={item.key}
+                            className="absolute pointer-events-none"
+                            style={{
+                                left: item.x,
+                                top: item.y,
+                                transform: 'translate(-50%, 0)',
+                                animation: `tutorialFadeIn 0.4s ease-out ${idx * 0.06}s both`,
+                                zIndex: 3
+                            }}
+                        >
+                            <div className="bg-indigo-500/90 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-lg shadow-indigo-500/30 whitespace-pre text-center">
+                                {item.label}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <style>{`
+                @keyframes tutorialFadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+            `}</style>
         </div >
     );
 }
