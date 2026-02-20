@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Bell, TriangleAlert, MapPin, Lightbulb
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import YouTubeEmbed from './YouTubeEmbed';
@@ -1209,7 +1209,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
             {showInfo && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-                    <div className="bg-slate-900/95 border border-slate-700/50 rounded-2xl p-6 max-w-sm w-full relative backdrop-blur-xl shadow-2xl">
+                    <div className="bg-slate-900/95 border border-slate-700/50 rounded-2xl p-6 max-w-sm w-full relative backdrop-blur-xl shadow-2xl max-h-[85vh] overflow-y-auto custom-scrollbar">
                         <button onClick={() => { setShowInfo(false); localStorage.setItem('intro_completed', 'true'); }} className="absolute top-4 right-4 text-slate-500">
                             <X size={20} />
                         </button>
@@ -1227,7 +1227,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         <p className="text-[10px] text-slate-500 mb-4"></p>
 
                         {/* Order Selection Buttons */}
-                        <div className="flex flex-col gap-2 mb-4">
+                        <div className="grid grid-cols-2 gap-2 mb-4">
                             <button
                                 onClick={() => {
                                     setViewType('release');
@@ -1279,9 +1279,37 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             <p className="text-[10px] leading-relaxed text-slate-400">
                                 <b className="text-slate-300">가이드 안내</b><br />
                                 • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
-                                • 헤더의 드롭다운에서 순서, 필터, 시즌을 언제든지 변경할 수 있습니다.<br />
-                                • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
+                                • 본 사이트는 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                             </p>
+                        </div>
+                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 mt-2">
+                            <p className="text-[10px] leading-relaxed text-slate-400">
+                                <b className="text-slate-300">Special Thanks to</b><br />
+                                • 교주 &apos;망고&apos; 님: 출시 순서 구글 스프레드 시트 공유 허락에 감사드립니다.<br />
+                                • 유튜버 &apos;애랑수&apos; 님: 스토리 녹화본 공유 허락에 감사드립니다.
+                            </p>
+                        </div>
+
+                        {/* External Link Buttons */}
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                            <a
+                                href="https://docs.google.com/spreadsheets/d/1xhTjImr4F4adLUUe6ifKkVrnLowTxKEDuTpV1GQonc8/edit?gid=0#gid=0"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:bg-emerald-500/20 transition-all"
+                            >
+                                <FileSpreadsheet size={24} className="text-emerald-400" />
+                                <span className="text-[9px] font-bold text-emerald-300 text-center leading-tight">&apos;망고&apos;님의<br />스프레드 시트</span>
+                            </a>
+                            <a
+                                href="https://www.youtube.com/@aerangsu"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 active:bg-rose-500/20 transition-all"
+                            >
+                                <Youtube size={24} className="text-rose-400" />
+                                <span className="text-[9px] font-bold text-rose-300 text-center leading-tight">&apos;애랑수&apos;님의<br />유튜브 링크</span>
+                            </a>
                         </div>
                     </div>
                 </div>

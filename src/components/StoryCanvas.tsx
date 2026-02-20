@@ -5,7 +5,7 @@ import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
     X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone, Bell,
-    Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin, HelpCircle
+    Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin, HelpCircle, FileSpreadsheet
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CurationNode from '@/components/CurationNode';
@@ -254,6 +254,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [hasNewUpdate, setHasNewUpdate] = useState(false);
     const [isSavingUpdate, setIsSavingUpdate] = useState(false);
     const [navHighlightedNodeId, setNavHighlightedNodeId] = useState<string | null>(null);
+    const [isNavigating, setIsNavigating] = useState(false);
+    const isNavigatingRef = useRef(false);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -650,7 +652,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             const nextX = (window.innerWidth / 2) - (node.position.x + nodeW / 2) * nextZoom;
             const nextY = (window.innerHeight / 2) - worldYCenter * nextZoom;
 
+            // Block mouse input during auto-navigation
+            isNavigatingRef.current = true;
+            setIsNavigating(true);
             setViewport({ x: nextX, y: nextY, zoom: nextZoom }, { duration: 700 });
+            setTimeout(() => {
+                isNavigatingRef.current = false;
+                setIsNavigating(false);
+            }, 800);
 
             // Trigger 1-second highlight
             setNavHighlightedNodeId(nodeId);
@@ -791,7 +800,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             const worldYCenter = (minY + maxY) / 2;
             const nextY = (window.innerHeight / 2) - ((worldYCenter + 60) * nextZoom); // Offset to slightly raise nodes
 
+            // Block mouse input during auto-navigation
+            isNavigatingRef.current = true;
+            setIsNavigating(true);
             setViewport({ x: nextX, y: nextY, zoom: nextZoom }, { duration: 1000 });
+            setTimeout(() => {
+                isNavigatingRef.current = false;
+                setIsNavigating(false);
+            }, 1100);
         }
     }, [nodes, setViewport]);
 
@@ -812,7 +828,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             // Synchronized with initialFocus (Increased to 300) to keep Y position consistent across reset/initial focus
             const nextY = (window.innerHeight / 2) - ((worldYCenter + 60) * nextZoom);
 
+            // Block mouse input during auto-navigation
+            isNavigatingRef.current = true;
+            setIsNavigating(true);
             setViewport({ x: nextX, y: nextY, zoom: nextZoom }, { duration: 800 });
+            setTimeout(() => {
+                isNavigatingRef.current = false;
+                setIsNavigating(false);
+            }, 900);
         }
     }, [nodes, getViewport, setViewport]);
 
@@ -903,6 +926,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         if (!el) return;
 
         const handleWheel = (e: WheelEvent) => {
+            if (isNavigatingRef.current) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             if (Math.abs(e.deltaY) > 0 || Math.abs(e.deltaX) > 0) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1764,6 +1792,24 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
     return (
         <div ref={containerRef} className="relative flex flex-col h-screen overflow-hidden bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500/30">
+            {/* Navigation block overlay: prevents mouse/drag input during auto-scroll animation */}
+            {isNavigating && (
+                <div
+                    className="absolute inset-0 z-[9999] cursor-wait flex items-center justify-center"
+                    style={{ pointerEvents: 'all', background: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(2px)' }}
+                    onMouseDown={e => e.preventDefault()}
+                    onPointerDown={e => e.preventDefault()}
+                    onTouchStart={e => e.preventDefault()}
+                >
+                    <div className="flex flex-col items-center gap-4">
+                        <div className="relative">
+                            <div className="w-16 h-16 border-4 border-indigo-500/20 rounded-full" />
+                            <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-indigo-400 border-r-indigo-400/50 rounded-full animate-spin" style={{ filter: 'drop-shadow(0 0 8px rgba(129, 140, 248, 0.6))' }} />
+                        </div>
+                        <span className="text-sm font-bold text-slate-200 tracking-widest uppercase animate-pulse">이동 중...</span>
+                    </div>
+                </div>
+            )}
             <div
                 className="absolute inset-0 pointer-events-none z-0"
                 style={{
@@ -2671,7 +2717,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             {/* Info / Intro Modal */}
             {showInfo && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-                    <div className="bg-slate-900/95 border border-slate-700/50 rounded-3xl p-8 max-w-lg w-full relative backdrop-blur-xl shadow-2xl shadow-black/50 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="bg-slate-900/95 border border-slate-700/50 rounded-3xl p-8 max-w-lg w-full relative backdrop-blur-xl shadow-2xl shadow-black/50 animate-in fade-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto custom-scrollbar">
                         <button onClick={() => { setShowInfo(false); localStorage.setItem('intro_completed', 'true'); }} className="absolute top-5 right-5 text-slate-500 hover:text-white transition-colors">
                             <X size={22} />
                         </button>
@@ -2785,9 +2831,37 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             <p className="text-[11px] leading-relaxed text-slate-400">
                                 <b className="text-slate-300">가이드 안내</b><br />
                                 • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
-                                • 헤더의 드롭다운에서 순서, 필터, 시즌을 언제든지 변경할 수 있습니다.<br />
-                                • 본 사이트는 운영상 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
+                                • 본 사이트는 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                             </p>
+                        </div>
+                        <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mt-3">
+                            <p className="text-[11px] leading-relaxed text-slate-400">
+                                <b className="text-slate-300">Special Thanks to</b><br />
+                                • 교주 &apos;망고&apos; 님: 출시 순서 구글 스프레드 시트 공유 허락에 감사드립니다.<br />
+                                • 유튜버 &apos;애랑수&apos; 님: 스토리 녹화본 공유 허락에 감사드립니다.
+                            </p>
+                        </div>
+
+                        {/* External Link Buttons */}
+                        <div className="grid grid-cols-2 gap-3 mt-4">
+                            <a
+                                href="https://docs.google.com/spreadsheets/d/1xhTjImr4F4adLUUe6ifKkVrnLowTxKEDuTpV1GQonc8/edit?gid=0#gid=0"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all group"
+                            >
+                                <FileSpreadsheet size={28} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+                                <span className="text-[11px] font-bold text-emerald-300 text-center leading-tight">&apos;망고&apos;님의<br />스프레드 시트</span>
+                            </a>
+                            <a
+                                href="https://www.youtube.com/@aerangsu"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 transition-all group"
+                            >
+                                <Youtube size={28} className="text-rose-400 group-hover:scale-110 transition-transform" />
+                                <span className="text-[11px] font-bold text-rose-300 text-center leading-tight">&apos;애랑수&apos;님의<br />유튜브 링크</span>
+                            </a>
                         </div>
                     </div>
                 </div>
