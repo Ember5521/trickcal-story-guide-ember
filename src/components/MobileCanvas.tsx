@@ -1264,7 +1264,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 <div className="text-sm font-black text-amber-400 mb-1">⭐ 추천 순서</div>
                                 <p className="text-[10px] leading-relaxed text-slate-400">
                                     <span className="font-bold text-slate-300">새로오신 교주님들께 추천</span><br />
-                                    극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 추천하는 진행 순서입니다.
+                                    인게임에서 제공하는 공식 스토리 가이드 "ELFLIX 프라임 BETA"의 정주행 루트를 반영한 순서입니다.
                                 </p>
                                 {viewType === 'recommended' && (
                                     <div className="absolute top-2 right-2 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">

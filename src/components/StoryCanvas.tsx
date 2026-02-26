@@ -2772,7 +2772,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-full" />
                                 <div className="text-lg font-black text-amber-400 mb-2">⭐ 추천 순서<br /><span className="text-[11px] font-semibold text-amber-400/70">새로오신 교주님들께 추천</span></div>
                                 <p className="text-[11px] leading-relaxed text-slate-400">
-                                    극장 개편 이후 기준으로, 기존 출시 순서와 인게임에서 실제 접근 가능한 순서를 종합하여 개발자가 추천하는 진행 순서입니다.
+                                    인게임에서 제공하는 공식 스토리 가이드 "ELFLIX 프라임 BETA"의 정주행 루트를 반영한 순서입니다.
                                 </p>
                                 {viewType === 'recommended' && (
                                     <div className="absolute top-3 right-3 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
