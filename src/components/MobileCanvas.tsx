@@ -73,7 +73,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         return null;
     }, []);
     const [season, setSeason] = useState(savedSettings?.season ?? 1);
-    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>(savedSettings?.viewType ?? 'release');
+    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release' | 'elflix'>(savedSettings?.viewType ?? 'release');
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
@@ -789,6 +789,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         >
                             <option value="release" className="bg-slate-900">순서: 출시</option>
                             <option value="recommended" className="bg-slate-900">순서: 추천</option>
+                            <option value="elflix" className="bg-slate-900">순서: ELFLIX</option>
                         </select>
                         <select
                             value={season}
@@ -1227,7 +1228,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         <p className="text-[10px] text-slate-500 mb-4"></p>
 
                         {/* Order Selection Buttons */}
-                        <div className="grid grid-cols-2 gap-2 mb-4">
+                        <div className="grid grid-cols-3 gap-2 mb-4">
                             <button
                                 onClick={() => {
                                     setViewType('release');
@@ -1235,17 +1236,17 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     setShowInfo(false);
                                 }}
                                 className={`group relative p-4 rounded-xl border-2 transition-all duration-300 text-left overflow-hidden ${viewType === 'release'
-                                    ? 'border-sky-500 bg-sky-500/10'
+                                    ? 'border-violet-500 bg-violet-500/10'
                                     : 'border-slate-700 bg-slate-800/50'
                                     }`}
                             >
-                                <div className="text-sm font-black text-sky-400 mb-1">📅 출시 순서</div>
+                                <div className="text-[13px] font-black text-violet-400 mb-1">📅 출시 순서:</div>
                                 <p className="text-[10px] leading-relaxed text-slate-400">
                                     <span className="font-bold text-slate-300">실제 출시되었던 순서 기록</span><br />
                                     Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.
                                 </p>
                                 {viewType === 'release' && (
-                                    <div className="absolute top-2 right-2 w-4 h-4 bg-sky-500 rounded-full flex items-center justify-center">
+                                    <div className="absolute top-2 right-2 w-4 h-4 bg-violet-500 rounded-full flex items-center justify-center">
                                         <span className="text-white text-[8px] font-bold">✓</span>
                                     </div>
                                 )}
@@ -1261,13 +1262,35 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     : 'border-slate-700 bg-slate-800/50'
                                     }`}
                             >
-                                <div className="text-sm font-black text-amber-400 mb-1">⭐ 추천 순서</div>
+                                <div className="text-[13px] font-black text-amber-400 mb-1">⭐ 추천 순서:</div>
                                 <p className="text-[10px] leading-relaxed text-slate-400">
-                                    <span className="font-bold text-slate-300">새로오신 교주님들께 추천</span><br />
-                                    인게임에서 제공하는 공식 스토리 가이드 "ELFLIX 프라임 BETA"의 정주행 루트를 반영한 순서입니다.
+                                    <span className="font-bold text-slate-300">공식 순서 기반으로 시청 경험 고려</span><br />
+                                    출시 순서와 ELFLIX 정주행 순서를 섞어 자연스러우면서도 기존 교주님들이 시청한 순서대로 반영했습니다.
                                 </p>
                                 {viewType === 'recommended' && (
                                     <div className="absolute top-2 right-2 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-[8px] font-bold">✓</span>
+                                    </div>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setViewType('elflix');
+                                    localStorage.setItem('intro_completed', 'true');
+                                    setShowInfo(false);
+                                }}
+                                className={`group relative p-4 rounded-xl border-2 transition-all duration-300 text-left overflow-hidden ${viewType === 'elflix'
+                                    ? 'border-sky-500 bg-sky-500/10'
+                                    : 'border-slate-700 bg-slate-800/50'
+                                    }`}
+                            >
+                                <div className="text-[13px] font-black text-sky-400 mb-1">🐾 ELFLIX 순서:</div>
+                                <p className="text-[10px] leading-relaxed text-slate-400">
+                                    <span className="font-bold text-slate-300">ELFLIX 정주행 루트</span><br />
+                                    ELFLIX의 순서를 그대로 반영하면서도 공식 순서에서 반영하지 않은 메인스토리 전반부/후반부를 나눴습니다.
+                                </p>
+                                {viewType === 'elflix' && (
+                                    <div className="absolute top-2 right-2 w-4 h-4 bg-sky-500 rounded-full flex items-center justify-center">
                                         <span className="text-white text-[8px] font-bold">✓</span>
                                     </div>
                                 )}

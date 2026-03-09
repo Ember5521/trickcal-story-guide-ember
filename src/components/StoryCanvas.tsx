@@ -92,7 +92,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         return null;
     }, []);
     const [season, setSeason] = useState(savedSettings?.season ?? 1);
-    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release'>(savedSettings?.viewType ?? 'release');
+    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release' | 'elflix'>(savedSettings?.viewType ?? 'release');
     const [showInfo, setShowInfo] = useState(false);
     const [showTutorial, setShowTutorial] = useState(false);
     const [tutorialPositions, setTutorialPositions] = useState<{ key: string; label: string; x: number; y: number; side: 'bottom' | 'top'; anchorX: number; anchorY: number; estH: number }[]>([]);
@@ -1900,6 +1900,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         >
                             <option value="release">순서: 출시</option>
                             <option value="recommended">순서: 추천</option>
+                            <option value="elflix">순서: ELFLIX</option>
                         </select>
                         <select
                             value={season}
@@ -1972,10 +1973,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         onChange={(e) => setViewType(e.target.value as any)}
                         className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm font-bold text-slate-100 outline-none cursor-pointer transition-all hover:bg-slate-700"
                         data-tutorial="order"
-                        data-tutorial-label="출시순 / 추천순 변경"
+                        data-tutorial-label="출시순 / 추천순 / ELFLIX 변경"
                     >
                         <option value="release" className="bg-slate-900">순서: 출시</option>
                         <option value="recommended" className="bg-slate-900">순서: 추천</option>
+                        <option value="elflix" className="bg-slate-900">순서: ELFLIX</option>
                     </select>
                     <select
                         value={season}
@@ -2735,7 +2737,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         <p className="text-xs text-slate-500 mb-6"></p>
 
                         {/* Order Selection Buttons */}
-                        <div className="grid grid-cols-2 gap-3 mb-6">
+                        <div className="grid grid-cols-3 gap-3 mb-6">
                             <button
                                 onClick={() => {
                                     setViewType('release');
@@ -2743,17 +2745,17 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     setShowInfo(false);
                                 }}
                                 className={`group relative p-5 rounded-2xl border-2 transition-all duration-300 text-left overflow-hidden ${viewType === 'release'
-                                    ? 'border-sky-500 bg-sky-500/10 shadow-lg shadow-sky-500/10'
-                                    : 'border-slate-700 bg-slate-800/50 hover:border-sky-500/50 hover:bg-sky-500/5'
+                                    ? 'border-violet-500 bg-violet-500/10 shadow-lg shadow-violet-500/10'
+                                    : 'border-slate-700 bg-slate-800/50 hover:border-violet-500/50 hover:bg-violet-500/5'
                                     }`}
                             >
-                                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-sky-500/10 to-transparent rounded-bl-full" />
-                                <div className="text-lg font-black text-sky-400 mb-2">📅 출시 순서<br /><span className="text-[11px] font-semibold text-sky-400/70">실제 출시되었던 순서 기록</span></div>
+                                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-violet-500/10 to-transparent rounded-bl-full" />
+                                <div className="text-[13px] font-black text-violet-400 mb-2">📅 출시 순서:<br /><span className="text-[11px] font-semibold text-violet-400/70">실제 출시되었던 순서 기록</span></div>
                                 <p className="text-[11px] leading-relaxed text-slate-400">
                                     Epid Games에서 업데이트한 콘텐츠의 출시 순서를 기준으로 정리되어 있습니다.
                                 </p>
                                 {viewType === 'release' && (
-                                    <div className="absolute top-3 right-3 w-5 h-5 bg-sky-500 rounded-full flex items-center justify-center">
+                                    <div className="absolute top-3 right-3 w-5 h-5 bg-violet-500 rounded-full flex items-center justify-center">
                                         <span className="text-white text-xs font-bold">✓</span>
                                     </div>
                                 )}
@@ -2770,12 +2772,34 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     }`}
                             >
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-full" />
-                                <div className="text-lg font-black text-amber-400 mb-2">⭐ 추천 순서<br /><span className="text-[11px] font-semibold text-amber-400/70">새로오신 교주님들께 추천</span></div>
+                                <div className="text-[13px] font-black text-amber-400 mb-2">⭐ 추천 순서:<br /><span className="text-[11px] font-semibold text-amber-400/70">공식 순서 기반으로 시청 경험 고려</span></div>
                                 <p className="text-[11px] leading-relaxed text-slate-400">
-                                    인게임에서 제공하는 공식 스토리 가이드 "ELFLIX 프라임 BETA"의 정주행 루트를 반영한 순서입니다.
+                                    출시 순서와 ELFLIX 정주행 순서를 섞어 자연스러우면서도 기존 교주님들이 시청한 순서대로 반영했습니다.
                                 </p>
                                 {viewType === 'recommended' && (
                                     <div className="absolute top-3 right-3 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
+                                        <span className="text-white text-xs font-bold">✓</span>
+                                    </div>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setViewType('elflix');
+                                    localStorage.setItem('intro_completed', 'true');
+                                    setShowInfo(false);
+                                }}
+                                className={`group relative p-5 rounded-2xl border-2 transition-all duration-300 text-left overflow-hidden ${viewType === 'elflix'
+                                    ? 'border-sky-500 bg-sky-500/10 shadow-lg shadow-sky-500/10'
+                                    : 'border-slate-700 bg-slate-800/50 hover:border-sky-500/50 hover:bg-sky-500/5'
+                                    }`}
+                            >
+                                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-sky-500/10 to-transparent rounded-bl-full" />
+                                <div className="text-[13px] font-black text-sky-400 mb-2">🐾 ELFLIX 순서:<br /><span className="text-[11px] font-semibold text-sky-400/70">ELFLIX 정주행 루트</span></div>
+                                <p className="text-[11px] leading-relaxed text-slate-400">
+                                    ELFLIX의 순서를 그대로 반영하면서도 공식 순서에서 반영하지 않은 메인스토리 전반부/후반부를 나눴습니다.
+                                </p>
+                                {viewType === 'elflix' && (
+                                    <div className="absolute top-3 right-3 w-5 h-5 bg-sky-500 rounded-full flex items-center justify-center">
                                         <span className="text-white text-xs font-bold">✓</span>
                                     </div>
                                 )}
