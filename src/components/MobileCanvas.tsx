@@ -1264,8 +1264,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             >
                                 <div className="text-[13px] font-black text-amber-400 mb-1">⭐ 추천 순서:</div>
                                 <p className="text-[10px] leading-relaxed text-slate-400">
-                                    <span className="font-bold text-slate-300">공식 순서 기반으로 시청 경험 고려</span><br />
-                                    출시 순서와 ELFLIX 정주행 순서를 섞어 자연스러우면서도 기존 교주님들이 시청한 순서대로 반영했습니다.
+                                    <span className="font-bold text-slate-300">다양한 관점에서 시청 경험 고려</span><br />
+                                    가장 많이 유입된 1주년 교주님들의 시청 경험과 새로오신 교주님들을 고려해 순서를 정리했습니다.
                                 </p>
                                 {viewType === 'recommended' && (
                                     <div className="absolute top-2 right-2 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
