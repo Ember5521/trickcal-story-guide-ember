@@ -2772,9 +2772,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     }`}
                             >
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-full" />
-                                <div className="text-[13px] font-black text-amber-400 mb-2">⭐ 추천 순서:<br /><span className="text-[11px] font-semibold text-amber-400/70">공식 순서 기반으로 시청 경험 고려</span></div>
+                                <div className="text-[13px] font-black text-amber-400 mb-2">⭐ 추천 순서:<br /><span className="text-[11px] font-semibold text-amber-400/70">다양한 관점에서 시청 경험 고려</span></div>
                                 <p className="text-[11px] leading-relaxed text-slate-400">
-                                    출시 순서와 ELFLIX 정주행 순서를 섞어 자연스러우면서도 기존 교주님들이 시청한 순서대로 반영했습니다.
+                                    가장 많이 유입된 1주년 교주님들의 시청 경험과 새로오신 교주님들을 고려해 순서를 정리했습니다.
                                 </p>
                                 {viewType === 'recommended' && (
                                     <div className="absolute top-3 right-3 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
@@ -2796,7 +2796,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-sky-500/10 to-transparent rounded-bl-full" />
                                 <div className="text-[13px] font-black text-sky-400 mb-2">🐾 ELFLIX 순서:<br /><span className="text-[11px] font-semibold text-sky-400/70">ELFLIX 정주행 루트</span></div>
                                 <p className="text-[11px] leading-relaxed text-slate-400">
-                                    ELFLIX의 순서를 그대로 반영하면서도 공식 순서에서 반영하지 않은 메인스토리 전반부/후반부를 나눴습니다.
+                                    ELFLIX의 순서를 그대로 반영하면서도 공식 순서에서 반영하지 않은 메인스토리 전반부/후반부를 나눴습니다. 개인적으로 시즌 1은 추천드리지 않습니다.
                                 </p>
                                 {viewType === 'elflix' && (
                                     <div className="absolute top-3 right-3 w-5 h-5 bg-sky-500 rounded-full flex items-center justify-center">
