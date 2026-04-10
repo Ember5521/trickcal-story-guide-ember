@@ -2737,7 +2737,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         <p className="text-xs text-slate-500 mb-6"></p>
 
                         {/* Order Selection Buttons */}
-                        <div className="grid grid-cols-3 gap-3 mb-6">
+                        <div className="grid grid-cols-1 gap-3 mb-6">
                             <button
                                 onClick={() => {
                                     setViewType('release');
@@ -2796,7 +2796,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-bl from-sky-500/10 to-transparent rounded-bl-full" />
                                 <div className="text-[13px] font-black text-sky-400 mb-2">🐾 ELFLIX 순서:<br /><span className="text-[11px] font-semibold text-sky-400/70">ELFLIX 정주행 루트</span></div>
                                 <p className="text-[11px] leading-relaxed text-slate-400">
-                                    ELFLIX의 순서를 그대로 반영하면서도 공식 순서에서 반영하지 않은 메인스토리 전반부/후반부를 나눴습니다. 글로벌 출시 순서로 예상되어 기존 시즌 1 순서와는 차이가 있습니다.
+                                    ELFLIX의 순서를 그대로 반영하면서도 공식 순서에서 반영하지 않은 메인스토리 전반부/후반부를 나눴습니다.
+                                    <br />글로벌 출시 순서로 예상되어 기존 시즌 1 순서와는 차이가 있습니다.
                                 </p>
                                 {viewType === 'elflix' && (
                                     <div className="absolute top-3 right-3 w-5 h-5 bg-sky-500 rounded-full flex items-center justify-center">
