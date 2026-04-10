@@ -1287,7 +1287,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 <div className="text-[13px] font-black text-sky-400 mb-1">🐾 ELFLIX 순서:</div>
                                 <p className="text-[10px] leading-relaxed text-slate-400">
                                     <span className="font-bold text-slate-300">ELFLIX 정주행 루트</span><br />
-                                    ELFLIX의 순서를 그대로 반영하면서도 공식 순서에서 반영하지 않은 메인스토리 전반부/후반부를 나눴습니다.
+                                    ELFLIX의 순서를 그대로 반영하면서도 공식 순서에서 반영하지 않은 메인스토리 전반부/후반부를 나눴습니다. 글로벌 출시 순서로 예상되어 기존 시즌 1 순서와는 차이가 있습니다.
                                 </p>
                                 {viewType === 'elflix' && (
                                     <div className="absolute top-2 right-2 w-4 h-4 bg-sky-500 rounded-full flex items-center justify-center">
