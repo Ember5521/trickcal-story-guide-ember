@@ -66,12 +66,10 @@ jobs:
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
       - name: Install dependencies
         run: ${{ steps.detect-package-manager.outputs.manager }} ${{ steps.detect-package-manager.outputs.command }}
+      # 주입할 환경변수가 없다. Worker 주소는 src/lib/api.ts 의 기본값을 쓰고,
+      # 데이터/이미지는 전부 그 Worker 뒤에 있다.
       - name: Build with Next.js
         run: ${{ steps.detect-package-manager.outputs.runner }} next build
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY || secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          NEXT_PUBLIC_IMAGE_PROXY_URL: ${{ vars.NEXT_PUBLIC_IMAGE_PROXY_URL || secrets.NEXT_PUBLIC_IMAGE_PROXY_URL }}
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
