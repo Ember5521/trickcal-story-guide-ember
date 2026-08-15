@@ -7,6 +7,10 @@ import {
     X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone, Bell,
     Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin, HelpCircle, FileSpreadsheet
 } from 'lucide-react';
+import * as api from '../lib/api';
+import { imageUrl } from '../lib/api';
+// 관리자 쓰기 경로는 아직 Supabase를 쓴다 (Phase 4에서 Worker로 이전).
+// 관리자 UI는 !isProd 조건이라 배포 번들의 방문자 경로에는 영향이 없다.
 import { supabase } from '../lib/supabase';
 import CurationNode from '@/components/CurationNode';
 import YouTubeEmbed from './YouTubeEmbed';
@@ -40,30 +44,6 @@ const nodeTypes = {
 
 const initialNodes: Node<StoryNodeData>[] = [];
 const initialEdges: Edge[] = [];
-const TABLE_NAME = process.env.NEXT_PUBLIC_STORY_TABLE_NAME || 'story_data';
-const IMAGE_PROXY_URL = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '';
-
-// Helper to get proxied image URL via Cloudflare
-const getProxyUrl = (originalUrl: string) => {
-    if (!originalUrl || !IMAGE_PROXY_URL) return originalUrl;
-    // Only proxy Supabase Storage URLs
-    if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
-        try {
-            const url = new URL(originalUrl);
-            const projId = url.hostname.split('.')[0];
-            const path = url.pathname.replace('/storage/v1/object/public', '');
-            // Ensure single leading slash for path
-            const cleanPath = path.startsWith('/') ? path : '/' + path;
-            // Remove trailing slash from proxy URL if present
-            const cleanProxyBase = IMAGE_PROXY_URL.endsWith('/') ? IMAGE_PROXY_URL.slice(0, -1) : IMAGE_PROXY_URL;
-            return `${cleanProxyBase}/${projId}${cleanPath}`;
-        } catch (e) {
-            return originalUrl;
-        }
-    }
-    return originalUrl;
-};
-
 // Zoom Scale Constants (Internal 0.55 = Display 1.0 for slightly more zoomed-out view)
 const SCALE_OUTER = 0.55; // Increased from 0.5 to make view slightly larger at 100%
 const toDisplayZoom = (z: number) => z / SCALE_OUTER;
@@ -92,7 +72,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         return null;
     }, []);
     const [season, setSeason] = useState(savedSettings?.season ?? 1);
-    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release' | 'elflix'>(savedSettings?.viewType ?? 'release');
+    const [viewType, setViewType] = useState<'recommended' | 'release' | 'elflix'>(savedSettings?.viewType ?? 'release');
     const [showInfo, setShowInfo] = useState(false);
     const [showTutorial, setShowTutorial] = useState(false);
     const [tutorialPositions, setTutorialPositions] = useState<{ key: string; label: string; x: number; y: number; side: 'bottom' | 'top'; anchorX: number; anchorY: number; estH: number }[]>([]);
@@ -308,39 +288,24 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
     useEffect(() => {
         const fetchUpdateLog = async () => {
-            if (!supabase) return;
             try {
-                const { data, error } = await supabase
-                    .from('app_updates')
-                    .select('*')
-                    .eq('id', 1)
-                    .single();
+                const [data] = await api.fetchUpdates();
+                if (!data) return;
 
-                if (data && !error) {
-                    setUpdateLogContent(data.content);
-                    setLastUpdateAt(data.updated_at);
+                setUpdateLogContent(data.content);
+                setLastUpdateAt(data.updated_at);
 
-                    // Check if there's a new update since last visit
-                    const lastRead = localStorage.getItem('last_read_update_at');
-                    if (!lastRead || new Date(data.updated_at) > new Date(lastRead)) {
-                        setHasNewUpdate(true);
-                    }
+                // Check if there's a new update since last visit
+                const lastRead = localStorage.getItem('last_read_update_at');
+                if (!lastRead || new Date(data.updated_at) > new Date(lastRead)) {
+                    setHasNewUpdate(true);
                 }
             } catch (err) {
                 console.error("Failed to fetch update log:", err);
             }
         };
 
-        const checkDB = async () => {
-            if (!supabase) return;
-            const { data, error } = await supabase.from('story_layouts').select('count');
-            console.log("DEBUG: story_layouts count:", data, "error:", error);
-            const { data: masters } = await supabase.from('master_stories').select('count');
-            console.log("DEBUG: master_stories count:", masters);
-        };
-
         fetchUpdateLog();
-        checkDB();
 
         // Auto-open info panel on first visit
         const introCompleted = localStorage.getItem('intro_completed');
@@ -1012,149 +977,92 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             setIsLoaded(false);
 
             try {
-                // For normalized schema, we fetch layout first, then masters
-                if (supabase) {
-                    const { data: layout, error: lError } = await supabase
-                        .from('story_layouts')
-                        .select('*')
-                        .eq('view_type', viewType)
-                        .eq('season', season)
-                        .maybeSingle();
+                // Worker가 레이아웃과 그것이 참조하는 스토리를 한 번에 조인해 돌려준다.
+                // (예전에는 레이아웃을 받고 story_id를 모아 두 번째 요청을 따로 보냈다.)
+                const layout = await api.fetchLayout(viewType, season);
+                const layoutNodes = layout.nodes as any[];
 
-                    if (layout && !lError) {
-                        const layoutNodes = layout.nodes as any[];
-                        // Filter for story nodes and ensure only valid UUIDs are passed to the master_stories query
-                        const storyIds = layoutNodes
-                            .filter(ln => ln.type !== 'annotationNode' && ln.story_id)
-                            .map(ln => ln.story_id)
-                            .filter(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
-
-                        const { data: masters, error: mError } = await supabase
-                            .from('master_stories')
-                            .select('*')
-                            .in('id', storyIds);
-
-                        if (masters && !mError) {
-                            const masterMap = new Map(masters.map(m => [m.id, m]));
-                            const histStr = localStorage.getItem(`watched_history_s${season}`) || '{}';
-                            const hist = JSON.parse(histStr);
-
-                            let missingMasterCount = 0;
-                            let emptyImageCount = 0;
-
-                            const finalNodes = layoutNodes.map(ln => {
-                                if (ln.type === 'annotationNode') {
-                                    return {
-                                        id: ln.id,
-                                        type: 'annotationNode',
-                                        position: { x: ln.x || 0, y: ln.y || 0 },
-                                        data: {
-                                            type: 'annotation',
-                                            content: ln.content,
-                                            isAdmin,
-                                            onDelete: handleDeleteAnnotation,
-                                            onUpdate: handleUpdateAnnotation
-                                        } as StoryNodeData,
-                                        width: ln.w || 96,
-                                        height: ln.h || 96,
-                                        style: { width: ln.w || 96, height: ln.h || 96 }
-                                    } as Node<StoryNodeData>;
-                                }
-
-                                const master = masterMap.get(ln.story_id);
-                                if (!master) {
-                                    missingMasterCount++;
-                                }
-                                const masterData = master || {};
-                                if (master && !master.image) {
-                                    emptyImageCount++;
-                                }
-
-                                // Consistent defaults for migrated data
-                                const getMigratedDimensions = (type: string) => {
-                                    if (type === 'main') return { w: 260, h: 380 };
-                                    if (type === 'theme') return { w: 320, h: 200 };
-                                    return { w: 300, h: 200 };
-                                };
-
-                                const { w: defW, h: defH } = getMigratedDimensions(masterData.type || 'main');
-
-                                const posX = typeof ln.x === 'number' ? ln.x : 0;
-                                const posY = typeof ln.y === 'number' ? ln.y : 0;
-                                // Robust fallback: If width/height is missing OR too small (e.g. 0 from bad migration), use default
-                                const finalW = (typeof ln.w === 'number' && ln.w > 50) ? ln.w : defW;
-                                const finalH = (typeof ln.h === 'number' && ln.h > 50) ? ln.h : defH;
-
-                                return {
-                                    id: ln.id,
-                                    type: 'storyNode',
-                                    position: { x: posX, y: posY },
-                                    width: finalW,
-                                    height: finalH,
-                                    style: { width: finalW, height: finalH },
-                                    data: {
-                                        ...masterData,
-                                        youtubeUrl: masterData.youtube_url,
-                                        partLabel: masterData.part_label,
-                                        story_id: ln.story_id,
-                                        m_x: ln.m_x,
-                                        m_y: ln.m_y,
-                                        splitType: ln.splitType || masterData.split_type || 'none', // Load splitType with fallback
-                                        watched: !!hist[ln.story_id || ln.id],
-                                        isAdmin,
-                                        onDelete: handleDeleteAnnotation,
-                                        onUpdate: handleUpdateAnnotation,
-                                        onPlayVideo: (url: string) => {
-                                            const info = getYouTubeInfo(url);
-                                            if (info) {
-                                                setPlayingVideoId(info.id);
-                                                setPlayingVideoStart(info.startTime);
-                                            }
-                                        },
-                                        image: getProxyUrl(masterData.image),
-                                        fullVideoUrl: masterData.full_video_url || ''
-                                    }
-                                } as Node<StoryNodeData>;
-                            });
-
-                            console.log(`[Season ${season}] Load complete. Total Nodes: ${finalNodes.length}, Missing Master: ${missingMasterCount}, Empty Image: ${emptyImageCount}`);
-
-                            if (season === 2) {
-                                console.log("[Season 2] Image Path Samples:", finalNodes.slice(0, 10).map(n => ({ label: n.data.label, image: n.data.image })));
-                                const target = finalNodes.find(n => n.data.label?.includes('뱀') || n.data.label?.includes('Snake'));
-                                if (target) {
-                                    console.log("[Season 2] Problem Node POS:", {
-                                        label: target.data.label,
-                                        x: target.position.x,
-                                        y: target.position.y,
-                                        w: target.width,
-                                        h: target.height,
-                                        type: (target.data as any).type,
-                                        style: target.style
-                                    });
-                                }
-
-                                // Check for Main nodes with wrong dimensions (wide instead of tall)
-                                const badMainNodes = finalNodes.filter(n => (n.data as any).type === 'main' && n.width && n.width > 280);
-                                if (badMainNodes.length > 0) {
-                                    console.log("[Season 2] Sizing Mismatch Detected:", badMainNodes.map(n => ({ label: n.data.label, w: n.width, h: n.height })));
-                                }
-                            }
-
-                            if (missingMasterCount > 0 || emptyImageCount > 0) {
-                                const samples = finalNodes.filter(n => !n.data.label || !n.data.image).slice(0, 5);
-                                console.log(`[Season ${season}] Samples of problematic nodes:`, samples.map(s => ({ id: s.id, story_id: (s.data as any).story_id, label: s.data.label })));
-                            }
-
-                            setNodes(finalNodes);
-                            setEdges(layout.edges);
-                        }
-                    } else {
-                        // Layout not found is not necessarily an error, just an empty layout
-                        console.warn("Layout not found for", viewType, season);
-                    }
-                    setIsLoaded(true); // Only mark as loaded if fetch was successful (or layout found but empty)
+                if (layoutNodes.length === 0) {
+                    console.warn("Layout not found for", viewType, season);
+                    setIsLoaded(true);
+                    return;
                 }
+
+                const masterMap = new Map(layout.stories.map(m => [m.id, m as any]));
+                const hist = JSON.parse(localStorage.getItem(`watched_history_s${season}`) || '{}');
+
+                const finalNodes = layoutNodes.map(ln => {
+                    if (ln.type === 'annotationNode') {
+                        return {
+                            id: ln.id,
+                            type: 'annotationNode',
+                            position: { x: ln.x || 0, y: ln.y || 0 },
+                            data: {
+                                type: 'annotation',
+                                content: ln.content,
+                                isAdmin,
+                                onDelete: handleDeleteAnnotation,
+                                onUpdate: handleUpdateAnnotation
+                            } as StoryNodeData,
+                            width: ln.w || 96,
+                            height: ln.h || 96,
+                            style: { width: ln.w || 96, height: ln.h || 96 }
+                        } as Node<StoryNodeData>;
+                    }
+
+                    const master = masterMap.get(ln.story_id);
+                    const masterData = master || {};
+
+                    // Consistent defaults for migrated data
+                    const getMigratedDimensions = (type: string) => {
+                        if (type === 'main') return { w: 260, h: 380 };
+                        if (type === 'theme') return { w: 320, h: 200 };
+                        return { w: 300, h: 200 };
+                    };
+
+                    const { w: defW, h: defH } = getMigratedDimensions(masterData.type || 'main');
+
+                    const posX = typeof ln.x === 'number' ? ln.x : 0;
+                    const posY = typeof ln.y === 'number' ? ln.y : 0;
+                    // Robust fallback: If width/height is missing OR too small (e.g. 0 from bad migration), use default
+                    const finalW = (typeof ln.w === 'number' && ln.w > 50) ? ln.w : defW;
+                    const finalH = (typeof ln.h === 'number' && ln.h > 50) ? ln.h : defH;
+
+                    return {
+                        id: ln.id,
+                        type: 'storyNode',
+                        position: { x: posX, y: posY },
+                        width: finalW,
+                        height: finalH,
+                        style: { width: finalW, height: finalH },
+                        data: {
+                            ...masterData,
+                            youtubeUrl: masterData.youtube_url,
+                            partLabel: masterData.part_label,
+                            story_id: ln.story_id,
+                            m_x: ln.m_x,
+                            m_y: ln.m_y,
+                            splitType: ln.splitType || masterData.split_type || 'none', // Load splitType with fallback
+                            watched: !!hist[ln.story_id || ln.id],
+                            isAdmin,
+                            onDelete: handleDeleteAnnotation,
+                            onUpdate: handleUpdateAnnotation,
+                            onPlayVideo: (url: string) => {
+                                const info = getYouTubeInfo(url);
+                                if (info) {
+                                    setPlayingVideoId(info.id);
+                                    setPlayingVideoStart(info.startTime);
+                                }
+                            },
+                            image: imageUrl(masterData.image),
+                            fullVideoUrl: masterData.full_video_url || ''
+                        }
+                    } as Node<StoryNodeData>;
+                });
+
+                setNodes(finalNodes);
+                setEdges(layout.edges);
+                setIsLoaded(true);
             } catch (err) {
                 console.error("Data load error:", err);
                 // DO NOT set isLoaded(true) here to prevent auto-syncing an empty/error state

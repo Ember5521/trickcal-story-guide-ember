@@ -28,27 +28,6 @@ export interface StoryNodeData {
     onUpdate?: (id: string, content: string) => void; // For annotations
 }
 
-const IMAGE_PROXY_URL = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '';
-
-// Helper to get proxied image URL via Cloudflare
-const getProxyUrl = (originalUrl: string) => {
-    if (!originalUrl || !IMAGE_PROXY_URL) return originalUrl;
-    // Only proxy Supabase Storage URLs
-    if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
-        try {
-            const url = new URL(originalUrl);
-            const projId = url.hostname.split('.')[0];
-            const path = url.pathname.replace('/storage/v1/object/public', '');
-            const cleanPath = path.startsWith('/') ? path : '/' + path;
-            const cleanProxyBase = IMAGE_PROXY_URL.endsWith('/') ? IMAGE_PROXY_URL.slice(0, -1) : IMAGE_PROXY_URL;
-            return `${cleanProxyBase}/${projId}${cleanPath}`;
-        } catch (e) {
-            return originalUrl;
-        }
-    }
-    return originalUrl;
-};
-
 const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
     const isWatched = data.watched && !data.isAdmin; // Only show watched state if not admin
     const isAdmin = data.isAdmin;
@@ -193,13 +172,11 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                 <div className={`relative ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
                     {data.image ? (
                         (() => {
-                            // 1. First, apply Cloudflare proxy if it's a Supabase URL
-                            const proxiedImage = getProxyUrl(data.image);
-
-                            // 2. Determine final source (Handle local path fallback)
-                            const imgSrc = proxiedImage.startsWith('http') || proxiedImage.startsWith('data:')
-                                ? proxiedImage
-                                : `${basePath}/images/${proxiedImage}`;
+                            // data.image 는 캔버스가 이미 imageUrl()로 절대 주소를 붙여 넘긴다.
+                            // 그렇지 않은 값(로컬 자산)만 basePath 기준으로 해석한다.
+                            const imgSrc = data.image.startsWith('http') || data.image.startsWith('data:')
+                                ? data.image
+                                : `${basePath}/images/${data.image}`;
 
                             return (
                                 <img
