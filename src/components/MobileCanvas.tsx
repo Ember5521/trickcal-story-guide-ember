@@ -4,10 +4,11 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet, RotateCcw
 } from 'lucide-react';
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
+import { canUndo, createUndoStack, layoutSignature, record, undo as popUndo } from '../lib/undo.mjs';
 import YouTubeEmbed from './YouTubeEmbed';
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -312,6 +313,62 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         }
     };
 
+    // 되돌리기 (관리자 전용). PC와 같은 규칙 — src/lib/undo.mjs.
+    // 모바일은 드래그 중간 상태를 setNodes 하지 않으므로(손 뗄 때 한 번) 제스처 묶음이 필요 없다.
+    // 자동 저장 디바운스도 없어서 되돌린 뒤 직접 올린다.
+    const undoStack = useRef(createUndoStack<Node[]>());
+    const [undoAvailable, setUndoAvailable] = useState(false);
+    // 관리자 진입 시점의 배치. "변경 취소하고 나가기"가 여기로 되돌린다.
+    const adminBaseRef = useRef<Node[] | null>(null);
+
+    useEffect(() => {
+        if (!isAdmin || !isLoaded || nodes.length === 0) return;
+        if (!adminBaseRef.current) adminBaseRef.current = nodes;
+        record(undoStack.current, nodes, (s) => layoutSignature(s));
+        setUndoAvailable(canUndo(undoStack.current));
+    }, [nodes, isAdmin, isLoaded]);
+
+    useEffect(() => {
+        undoStack.current = createUndoStack();
+        adminBaseRef.current = null;
+        setUndoAvailable(false);
+    }, [season, viewType]);
+
+    const handleUndo = async () => {
+        const prev = popUndo(undoStack.current);
+        setUndoAvailable(canUndo(undoStack.current));
+        if (!prev) return;
+        setNodes(prev);
+        await syncToCloud(prev);
+    };
+
+    const leaveAdmin = () => {
+        setIsAdmin(false);
+        api.logout();
+        undoStack.current = createUndoStack();
+        adminBaseRef.current = null;
+        setUndoAvailable(false);
+    };
+
+    /**
+     * 배치 변경을 버리고 나간다. 편집할 때마다 이미 클라우드에 올라가 있으므로,
+     * 관리자로 들어온 시점의 배치를 다시 올려야 실제로 취소가 된다.
+     */
+    const discardAndLeaveAdmin = async () => {
+        const base = adminBaseRef.current;
+        if (!confirm(
+            "이번 관리자 세션에서 바꾼 배치를 모두 취소하고 나갑니다.\n\n" +
+            "주의: 스토리 폼에서 저장한 제목·이미지·영상 링크는 이미 저장돼 있어 되돌아가지 않습니다."
+        )) return;
+
+        if (base) {
+            setNodes(base);
+            const ok = await syncToCloud(base);
+            if (!ok && !confirm("되돌린 배치를 저장하지 못했습니다. 그래도 나갈까요?")) return;
+        }
+        leaveAdmin();
+    };
+
     const getYouTubeInfo = (url: string) => {
         if (!url) return null;
         const idRegExp = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
@@ -496,7 +553,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 youtubeUrl: m.youtube_url,
                 fullVideoUrl: m.full_video_url,
                 protagonist: m.protagonist,
+                partLabel: m.part_label,
                 importance: m.importance,
+                splitType: m.split_type || 'none',
+                content: m.type === 'annotation' ? m.label : '',
                 story_id: m.id,
                 watched: false
             }
@@ -510,8 +570,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             const ok = await syncToCloud(nodes);
             if (ok) alert("저장되었습니다.");
             else if (!confirm("저장 실패. 무시하고 나갈까요?")) return;
-            setIsAdmin(false);
-            api.logout();
+            leaveAdmin();
         } else {
             const pw = prompt("관리자 비밀번호를 입력하세요.");
             if (!pw) return;
@@ -670,6 +729,14 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             {isAdmin && (
                                 <>
                                     <button
+                                        onClick={handleUndo}
+                                        disabled={!undoAvailable}
+                                        className="p-1.5 bg-slate-800 rounded-lg text-slate-300 border border-slate-700 disabled:opacity-25"
+                                        title="되돌리기 (배치만)"
+                                    >
+                                        <RotateCcw size={13} />
+                                    </button>
+                                    <button
                                         onClick={() => {
                                             fetchMasterStories();
                                             setShowMasterLibrary(true);
@@ -690,6 +757,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         title="새 마스터 생성"
                                     >
                                         <Plus size={13} />
+                                    </button>
+                                    <button
+                                        onClick={discardAndLeaveAdmin}
+                                        className="p-1.5 bg-slate-800 rounded-lg text-rose-400 border border-slate-700"
+                                        title="변경 취소하고 나가기"
+                                    >
+                                        <X size={13} />
                                     </button>
                                 </>
                             )}
@@ -1383,7 +1457,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         className="group relative aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden border border-slate-700 active:scale-95 transition-all shadow-lg"
                                     >
                                         {m.image ? (
-                                            <img src={m.image} className="w-full h-full object-cover" alt={m.label} loading="lazy" />
+                                            <img src={getImageUrl(m.image)} className="w-full h-full object-cover" alt={m.label} loading="lazy" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center bg-slate-700/30">
                                                 <ImageIcon size={32} className="text-slate-600" />

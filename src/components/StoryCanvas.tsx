@@ -5,10 +5,11 @@ import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
     X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone, Bell,
-    Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin, HelpCircle, FileSpreadsheet
+    Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin, HelpCircle, FileSpreadsheet, Frame
 } from 'lucide-react';
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
+import { canUndo, createUndoStack, layoutSignature, record, undo as popUndo } from '../lib/undo.mjs';
 import CurationNode from '@/components/CurationNode';
 import YouTubeEmbed from './YouTubeEmbed';
 import ReactFlow, {
@@ -37,6 +38,31 @@ import StoryNode, { StoryNodeData } from './StoryNode';
 const nodeTypes = {
     storyNode: StoryNode,
     annotationNode: CurationNode,
+};
+
+/**
+ * 타입별 표준 틀 크기.
+ *
+ * 실제 D1 레이아웃 510개를 세어서 가장 많이 쓰인 크기로 잡았다. 리사이저가 자유
+ * 비율이라 그동안 손으로 끌면서 12~80px씩 어긋난 값들이 쌓여 있었다.
+ * 새로 만드는 노드와 "표준 크기로 맞추기" 버튼이 같은 표를 쓴다.
+ *
+ * etc는 이미지가 제각각이고 `object-contain`이라 표준을 두지 않는다.
+ * annotation은 300x200 / 96x96 두 변종을 일부러 쓰므로 건드리지 않는다.
+ * (레이아웃에 w/h가 아예 없는 옛 데이터의 폴백은 별개다 — 로드 쪽 getMigratedDimensions.)
+ */
+const STANDARD_SIZE: Record<string, { w: number; h: number }> = {
+    main: { w: 406, h: 645 },
+    theme: { w: 530, h: 271 },
+    theme_x: { w: 530, h: 271 },
+    theme_now: { w: 530, h: 271 },
+    eternal: { w: 530, h: 271 },
+    frontier: { w: 338, h: 541 },
+};
+
+const defaultNodeSize = (type?: string) => {
+    const std = STANDARD_SIZE[type ?? ''];
+    return std ? { w: std.w, h: std.h } : { w: 300, h: 200 };
 };
 
 const initialNodes: Node<StoryNodeData>[] = [];
@@ -812,6 +838,53 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         }
     }, [season]);
 
+    // 되돌리기 (관리자 전용). 한 단계 = 동작 하나 (이동 하나, 리사이즈 하나, 삭제 하나).
+    // 규칙은 src/lib/undo.mjs에 있다.
+    const undoStack = useRef(createUndoStack<{ nodes: Node<StoryNodeData>[]; edges: Edge[] }>());
+    const [undoAvailable, setUndoAvailable] = useState(false);
+    // 드래그/리사이즈는 손 뗄 때까지 상태가 수십 번 갱신된다. 그 구간을 한 단계로 묶으려고
+    // ReactFlow가 주는 dragging/resizing 플래그를 onNodesChange에서 여기 받아둔다.
+    const gestureRef = useRef(false);
+    // 관리자 진입 시점의 배치. "변경 취소하고 나가기"가 여기로 되돌린다.
+    const adminBaseRef = useRef<{ nodes: Node<StoryNodeData>[]; edges: Edge[] } | null>(null);
+
+    useEffect(() => {
+        // 로드 직후의 빈 상태를 기준선으로 잡으면 되돌리기가 캔버스를 비워버린다.
+        if (!isAdmin || !isLoaded || nodes.length === 0) return;
+        if (!adminBaseRef.current) adminBaseRef.current = { nodes, edges };
+        record(undoStack.current, { nodes, edges }, (s) => layoutSignature(s.nodes, s.edges), gestureRef.current);
+        setUndoAvailable(canUndo(undoStack.current));
+    }, [nodes, edges, isAdmin, isLoaded]);
+
+    // 시즌/뷰가 바뀌면 다른 레이아웃이다. 이전 스택을 들고 가면 남의 배치를 덮어쓴다.
+    useEffect(() => {
+        undoStack.current = createUndoStack();
+        adminBaseRef.current = null;
+        setUndoAvailable(false);
+    }, [season, viewType]);
+
+    const handleUndo = useCallback(() => {
+        const prev = popUndo(undoStack.current);
+        setUndoAvailable(canUndo(undoStack.current));
+        if (!prev) return;
+        setNodes(prev.nodes);
+        setEdges(prev.edges);
+        // 클라우드 저장은 아래 2초 디바운스 이펙트가 알아서 따라온다.
+    }, [setNodes, setEdges]);
+
+    useEffect(() => {
+        if (!isAdmin) return;
+        const onKey = (ev: KeyboardEvent) => {
+            if (!(ev.ctrlKey || ev.metaKey) || ev.key.toLowerCase() !== 'z') return;
+            const tag = (ev.target as HTMLElement | null)?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA') return;   // 폼 입력은 브라우저 기본 실행취소에 맡긴다
+            ev.preventDefault();
+            handleUndo();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isAdmin, handleUndo]);
+
     const syncToCloud = async (n: Node<StoryNodeData>[], e: Edge[]) => {
         if (!isAdmin) return false;
 
@@ -1115,22 +1188,52 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         setShowForm(true);
     };
 
+    const leaveAdmin = () => {
+        api.logout();
+        setIsAdmin(false);
+        undoStack.current = createUndoStack();
+        adminBaseRef.current = null;
+        setUndoAvailable(false);
+        setNodes(nds => nds.map(n => ({
+            ...n,
+            data: {
+                ...n.data,
+                isAdmin: false,
+                onDelete: handleDeleteAnnotation,
+                onUpdate: handleUpdateAnnotation
+            }
+        })));
+    };
+
+    /**
+     * 배치 변경을 버리고 나간다.
+     *
+     * 편집 중에는 2초 디바운스로 이미 클라우드에 올라가 있다. 그래서 "그냥 저장 안 하고
+     * 나가기"는 아무것도 되돌리지 못한다. 관리자로 들어온 시점의 배치를 다시 올려야
+     * 실제로 취소가 된다.
+     */
+    const discardAndLeaveAdmin = async () => {
+        const base = adminBaseRef.current;
+        if (!confirm(
+            "이번 관리자 세션에서 바꾼 배치를 모두 취소하고 나갑니다.\n\n" +
+            "주의: 스토리 폼에서 저장한 제목·이미지·영상 링크는 이미 저장돼 있어 되돌아가지 않습니다."
+        )) return;
+
+        if (base) {
+            setNodes(base.nodes);
+            setEdges(base.edges);
+            const ok = await syncToCloud(base.nodes, base.edges);
+            if (!ok && !confirm("되돌린 배치를 저장하지 못했습니다. 그래도 나갈까요?")) return;
+        }
+        leaveAdmin();
+    };
+
     const toggleAdmin = async () => {
         if (isAdmin) {
             const ok = await syncToCloud(nodes, edges);
             if (ok) alert("저장되었습니다.");
             else if (!confirm("저장 실패. 무시하고 나갈까요?")) return;
-            api.logout();
-            setIsAdmin(false);
-            setNodes(nds => nds.map(n => ({
-                ...n,
-                data: {
-                    ...n.data,
-                    isAdmin: false,
-                    onDelete: handleDeleteAnnotation,
-                    onUpdate: handleUpdateAnnotation
-                }
-            })));
+            leaveAdmin();
         } else {
             const pw = prompt("비밀번호");
             if (!pw) return;
@@ -1159,6 +1262,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
     // Flow Callbacks
     const onNodesChange = useCallback((c: NodeChange[]) => {
+        // 손을 아직 안 뗐으면 되돌리기 단계를 새로 열지 않는다 (드래그/리사이즈 = 한 단계).
+        gestureRef.current = c.some(ch =>
+            (ch.type === 'position' && ch.dragging === true) ||
+            (ch.type === 'dimensions' && (ch as any).resizing === true)
+        );
         setNodes(nds => {
             const up = applyNodeChanges(c, nds) as Node<StoryNodeData>[];
 
@@ -1337,13 +1445,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         // Skip title check for Curation (annotation)
         if (formData.type !== 'annotation' && !formData.label) { alert("제목 입력!"); return; }
 
-        const getDimensions = () => {
-            if (formData.type === 'main') return { w: 406, h: 645 };
-            if (formData.type === 'theme' || formData.type === 'theme_x') return { w: 520, h: 260 };
-            return { w: 300, h: 200 };
-        };
-
-        const { w, h } = getDimensions();
+        const { w, h } = defaultNodeSize(formData.type);
 
         try {
             let storyId = (formData as any).story_id;
@@ -1468,13 +1570,41 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         }
     };
 
+    /**
+     * 선택한 노드(없으면 이 화면 전체)의 크기를 표준 틀로 맞춘다.
+     * 한 번의 setNodes라 되돌리기 한 단계로 통째로 취소된다.
+     */
+    const snapToStandard = useCallback(() => {
+        const selected = nodes.filter(n => n.selected);
+        const scope = selected.length > 0 ? selected : nodes;
+        const scopeLabel = selected.length > 0 ? `선택한 ${selected.length}개 중` : '이 화면의 노드 중';
+
+        const targets = new Set(
+            scope
+                .filter(n => n.type !== 'annotationNode')
+                .filter(n => STANDARD_SIZE[(n.data.type as string) ?? ''])
+                .filter(n => {
+                    const std = STANDARD_SIZE[n.data.type as string];
+                    return n.width !== std.w || n.height !== std.h;
+                })
+                .map(n => n.id),
+        );
+
+        if (targets.size === 0) {
+            alert("맞출 노드가 없습니다. (etc·주석 노드는 표준 크기가 없어 제외됩니다.)");
+            return;
+        }
+        if (!confirm(`${scopeLabel} ${targets.size}개의 크기를 표준 틀로 맞춥니다.\n되돌리기(Ctrl+Z)로 한 번에 취소할 수 있습니다.`)) return;
+
+        setNodes(nds => nds.map(n => {
+            if (!targets.has(n.id)) return n;
+            const std = STANDARD_SIZE[n.data.type as string];
+            return { ...n, width: std.w, height: std.h, style: { ...n.style, width: std.w, height: std.h } };
+        }));
+    }, [nodes, setNodes]);
+
     const handleImportMaster = (m: any) => {
-        const getDimensions = (type: string) => {
-            if (type === 'main') return { w: 406, h: 645 };
-            if (type === 'theme' || type === 'theme_x') return { w: 520, h: 260 };
-            return { w: 300, h: 200 };
-        };
-        const { w, h } = getDimensions(m.type);
+        const { w, h } = defaultNodeSize(m.type);
         const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
         const newNode: Node<StoryNodeData> = {
@@ -1487,6 +1617,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 youtubeUrl: m.youtube_url,
                 fullVideoUrl: m.full_video_url,
                 protagonist: m.protagonist,
+                partLabel: m.part_label,
                 importance: m.importance,
                 story_id: m.id,
                 watched: false,
@@ -1506,7 +1637,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             } as StoryNodeData,
             type: m.type === 'annotation' ? 'annotationNode' : 'storyNode',
             width: w,
-            height: h
+            height: h,
+            // style이 없으면 ReactFlow가 내용에 맞춰 줄여버린다. 폼으로 만드는 경로와 같아야 한다.
+            style: { width: w, height: h }
         };
 
         setNodes(nds => [...nds, newNode]);
@@ -1598,11 +1731,33 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                         {isAdmin && (
                             <div className="flex items-center gap-1.5 md:gap-2 border-l border-slate-700 pl-2">
                                 <button
+                                    onClick={handleUndo}
+                                    disabled={!undoAvailable}
+                                    className="p-2 bg-slate-700/80 hover:bg-slate-600 disabled:opacity-25 disabled:hover:bg-slate-700/80 disabled:cursor-not-allowed text-white rounded-xl border border-slate-500/30 shadow-sm transition-all flex items-center active:scale-95"
+                                    title="되돌리기 (Ctrl+Z) — 배치만 되돌립니다"
+                                >
+                                    <RotateCcw size={16} className="md:w-[18px] md:h-[18px]" />
+                                </button>
+                                <button
                                     onClick={handleAddStory}
                                     className="p-2 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-xl border border-indigo-400/30 shadow-sm shadow-indigo-500/10 transition-all flex items-center gap-1 active:scale-95 group"
                                     title="새 스토리 추가"
                                 >
                                     <Plus size={16} className="md:w-[18px] md:h-[18px] group-hover:scale-110 transition-transform" />
+                                </button>
+                                <button
+                                    onClick={snapToStandard}
+                                    className="p-2 bg-slate-700/80 hover:bg-slate-600 text-white rounded-xl border border-slate-500/30 shadow-sm transition-all flex items-center active:scale-95"
+                                    title="표준 크기로 맞추기 — 선택한 노드(없으면 전체)를 타입별 표준 틀 크기로"
+                                >
+                                    <Frame size={16} className="md:w-[18px] md:h-[18px]" />
+                                </button>
+                                <button
+                                    onClick={discardAndLeaveAdmin}
+                                    className="p-2 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-xl border border-rose-500/30 transition-all flex items-center active:scale-95"
+                                    title="변경 취소하고 나가기 — 관리자로 들어온 시점의 배치로 되돌립니다"
+                                >
+                                    <X size={16} className="md:w-[18px] md:h-[18px]" />
                                 </button>
                             </div>
                         )}
@@ -1948,7 +2103,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             className="group relative aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-indigo-500 transition-all hover:shadow-2xl hover:shadow-indigo-500/20"
                                         >
                                             {m.image ? (
-                                                <img src={m.image} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={m.label} loading="lazy" />
+                                                <img src={imageUrl(m.image)} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={m.label} loading="lazy" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center bg-slate-700/30">
                                                     <ImageIcon size={32} className="text-slate-600" />
