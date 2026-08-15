@@ -9,9 +9,6 @@ import {
 } from 'lucide-react';
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
-// 관리자 쓰기 경로는 아직 Supabase를 쓴다 (Phase 4에서 Worker로 이전).
-// 관리자 UI는 !isProd 조건이라 배포 번들의 방문자 경로에는 영향이 없다.
-import { supabase } from '../lib/supabase';
 import CurationNode from '@/components/CurationNode';
 import YouTubeEmbed from './YouTubeEmbed';
 import ReactFlow, {
@@ -209,7 +206,6 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [isModalFullscreen, setIsModalFullscreen] = useState(false);
     const [edgeType, setEdgeType] = useState<'step' | 'straight'>('step');
     const [isUploading, setIsUploading] = useState(false);
-    const [isSyncing, setIsSyncing] = useState(false);
 
     // Memo State
     const [showMemo, setShowMemo] = useState(false);
@@ -242,7 +238,6 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const edgeClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const isInitialFocusDone = useRef(false);
     const edgesRef = useRef(edges);
-    const sessionPassword = useRef<string | null>(null);
     const pendingScrollStoryId = useRef<string | null>(null);
     useEffect(() => { edgesRef.current = edges; }, [edges]);
 
@@ -818,11 +813,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     }, [season]);
 
     const syncToCloud = async (n: Node<StoryNodeData>[], e: Edge[]) => {
-        if (!supabase || !isAdmin) return false;
-        if (!sessionPassword.current) {
-            console.error("Cloud sync: No session password found");
-            return false;
-        }
+        if (!isAdmin) return false;
 
         try {
             // Convert React Flow nodes to layout storage format (only id, story_id, position, and mobile coords)
@@ -852,35 +843,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 };
             });
 
-            console.log(`Cloud sync starting for ${viewType} ${season}...`, { nodeCount: layoutNodes.length, edgeCount: e.length });
-
-            const { data, error } = await supabase.rpc('save_story_layout', {
-                p_view_type: viewType,
-                p_season: season,
-                p_nodes: layoutNodes,
-                p_edges: e,
-                p_password: sessionPassword.current
-            });
-
-            if (error) {
-                console.error("Cloud sync RPC error detected!", {
-                    code: error.code,
-                    message: error.message,
-                    details: error.details,
-                    hint: error.hint
-                });
-                return false;
-            }
-
-            if (data === false) {
-                console.error("Cloud sync failed: RPC returned false (Password mismatch?)");
-                return false;
-            }
-
-            console.log("Cloud sync successful!");
+            await api.saveLayout(viewType, season, layoutNodes, e);
             return true;
         } catch (err) {
-            console.error("Cloud sync exception:", err);
+            console.error("레이아웃 저장 실패:", err);
+            alert(err instanceof Error ? err.message : "저장에 실패했습니다.");
             return false;
         }
     };
@@ -1054,7 +1021,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     setPlayingVideoStart(info.startTime);
                                 }
                             },
-                            image: imageUrl(masterData.image),
+                            image: masterData.image,   // 상대 키 그대로. 절대 URL 변환은 렌더 시점에.
                             fullVideoUrl: masterData.full_video_url || ''
                         }
                     } as Node<StoryNodeData>;
@@ -1153,6 +1120,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             const ok = await syncToCloud(nodes, edges);
             if (ok) alert("저장되었습니다.");
             else if (!confirm("저장 실패. 무시하고 나갈까요?")) return;
+            api.logout();
             setIsAdmin(false);
             setNodes(nds => nds.map(n => ({
                 ...n,
@@ -1167,112 +1135,25 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             const pw = prompt("비밀번호");
             if (!pw) return;
 
-            // Verify password via Supabase RPC (Database Function)
-            // This is secure because the password comparison happens inside the database
-            if (!supabase) { alert("DB 연결 실패"); return; }
-
-            const { data: isValid, error } = await supabase.rpc('verify_admin_password', {
-                input_password: pw
-            });
-
-            if (error) {
-                console.error("Auth error:", error);
-                alert("인증 오류가 발생했습니다.");
+            // Worker가 비밀번호를 검증하고 만료 있는 세션 토큰을 발급한다.
+            // 시도 횟수 제한도 Worker 쪽에 있다 (IP당 15분에 10회).
+            try {
+                await api.login(pw);
+            } catch (err) {
+                alert(err instanceof Error ? err.message : "인증에 실패했습니다.");
                 return;
             }
 
-            if (isValid) {
-                sessionPassword.current = pw;
-                setIsAdmin(true);
-                setNodes(nds => nds.map(n => ({
-                    ...n,
-                    data: {
-                        ...n.data,
-                        isAdmin: true,
-                        onDelete: handleDeleteAnnotation,
-                        onUpdate: handleUpdateAnnotation
-                    }
-                })));
-            } else {
-                alert("권한이 없습니다.");
-            }
-        }
-    };
-
-    const handleSyncToDeploy = async () => {
-        if (!isAdmin) return;
-        const pw = sessionPassword.current;
-        if (!pw) {
-            alert("관리자 세션이 만료되었습니다. 다시 로그인해주세요.");
-            setIsAdmin(false);
-            return;
-        }
-
-        if (!confirm("현재 개발 서버의 모든 데이터를 운영 서버(Deploy)로 덮어씌우시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) {
-            return;
-        }
-
-        setIsSyncing(true);
-        try {
-            const response = await fetch('/api/sync-db', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: pw })
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.error || '동기화 중 오류가 발생했습니다.');
-            }
-
-            let summary = "동기화 완료!\n\n";
-            for (const [table, detail] of Object.entries(result.details || {})) {
-                summary += `• ${table}: ${detail}\n`;
-            }
-            alert(summary);
-        } catch (err: any) {
-            console.error("Sync error:", err);
-            alert(`동기화 실패: ${err.message}`);
-        } finally {
-            setIsSyncing(false);
-        }
-    };
-
-    const handlePullFromDeploy = async () => {
-        if (!isAdmin) return;
-        const pw = sessionPassword.current;
-        if (!pw) {
-            alert("관리자 세션이 만료되었습니다. 다시 로그인해주세요.");
-            setIsAdmin(false);
-            return;
-        }
-
-        if (!confirm("운영 서버(Deploy)의 모든 데이터를 현재 개발 서버로 덮어씌우시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) {
-            return;
-        }
-
-        setIsSyncing(true);
-        try {
-            const response = await fetch('/api/sync-db', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: pw, mode: 'pull' })
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.error || '가져오기 중 오류가 발생했습니다.');
-            }
-
-            alert("데이터를 성공적으로 가져왔습니다. 페이지를 새로고침합니다.");
-            window.location.reload();
-        } catch (err: any) {
-            console.error("Pull error:", err);
-            alert(`가져오기 실패: ${err.message}`);
-        } finally {
-            setIsSyncing(false);
+            setIsAdmin(true);
+            setNodes(nds => nds.map(n => ({
+                ...n,
+                data: {
+                    ...n.data,
+                    isAdmin: true,
+                    onDelete: handleDeleteAnnotation,
+                    onUpdate: handleUpdateAnnotation
+                }
+            })));
         }
     };
 
@@ -1455,7 +1336,6 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const handleSaveNode = async () => {
         // Skip title check for Curation (annotation)
         if (formData.type !== 'annotation' && !formData.label) { alert("제목 입력!"); return; }
-        if (!supabase || !sessionPassword.current) return;
 
         const getDimensions = () => {
             if (formData.type === 'main') return { w: 406, h: 645 };
@@ -1468,39 +1348,20 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         try {
             let storyId = (formData as any).story_id;
 
-            // Master story creation/update for all types (including Curation)
-            if (editingNodeId && storyId) {
-                // Update existing master story
-                await supabase.rpc('update_master_story', {
-                    p_id: storyId,
-                    p_label: formData.label || (formData.type === 'annotation' ? 'Curation Note' : ''),
-                    p_type: formData.type,
-                    p_image: formData.image,
-                    p_youtube_url: formData.youtubeUrl || '',
-                    p_protagonist: formData.protagonist || '',
-                    p_part_label: formData.partLabel || '',
-                    p_importance: formData.importance || 0,
-                    p_password: sessionPassword.current,
-                    p_split_type: formData.splitType || 'none',
-                    p_full_video_url: formData.fullVideoUrl || ''
-                });
-            } else {
-                // Create new master story
-                const { data: newId, error } = await supabase.rpc('create_master_story', {
-                    p_label: formData.label || (formData.type === 'annotation' ? 'Curation Note' : ''),
-                    p_type: formData.type,
-                    p_image: formData.image,
-                    p_youtube_url: formData.youtubeUrl || '',
-                    p_protagonist: formData.protagonist || '',
-                    p_part_label: formData.partLabel || '',
-                    p_importance: formData.importance || 0,
-                    p_password: sessionPassword.current,
-                    p_split_type: formData.splitType || 'none',
-                    p_full_video_url: formData.fullVideoUrl || ''
-                });
-                if (error || !newId) throw new Error("Master story creation failed");
-                storyId = newId;
-            }
+            // id가 있으면 수정, 없으면 생성. Worker가 둘 다 처리한다.
+            const saved = await api.saveStory({
+                id: editingNodeId && storyId ? storyId : undefined,
+                label: formData.label || (formData.type === 'annotation' ? 'Curation Note' : ''),
+                type: formData.type,
+                image: api.imageKey(formData.image),   // 절대 URL이 섞여도 키로 되돌려 저장
+                youtube_url: formData.youtubeUrl || '',
+                protagonist: formData.protagonist || '',
+                part_label: formData.partLabel || '',
+                importance: formData.importance || 0,
+                split_type: formData.splitType || 'none',
+                full_video_url: formData.fullVideoUrl || '',
+            });
+            storyId = saved.id;
 
             if (editingNodeId) {
                 const up = nodes.map(n => {
@@ -1554,95 +1415,52 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !supabase) return;
+        if (!file) return;
 
         setIsUploading(true);
         try {
-            // 1. Upload to Supabase Storage
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${season}/${Date.now()}.${fileExt}`;
-            const filePath = `nodes/${fileName}`;
+            // Worker가 R2에 저장하고 키를 돌려준다. formData.image 에는 절대 URL이 아니라
+            // 키를 담는다 (D1에 저장되는 값과 동일하게 유지).
+            const key = await api.uploadImage(file, season);
 
-            const { error: uploadError } = await supabase.storage
-                .from('story-images')
-                .upload(filePath, file, { upsert: true });
-
-            if (uploadError) throw uploadError;
-
-            // 2. Get Public URL
-            const { data: { publicUrl } } = supabase.storage
-                .from('story-images')
-                .getPublicUrl(filePath);
-
-            // 3. Pre-calculate dimensions and update formData
             const img = new Image();
             img.onload = () => {
-                setFormData(prev => ({
-                    ...prev,
-                    image: publicUrl,
-                    _tempW: img.width,
-                    _tempH: img.height
-                } as any));
+                setFormData(prev => ({ ...prev, image: key, _tempW: img.width, _tempH: img.height } as any));
                 setIsUploading(false);
             };
             img.onerror = () => {
                 console.error("Image preview load failed");
-                setFormData(prev => ({
-                    ...prev,
-                    image: publicUrl
-                } as any));
+                setFormData(prev => ({ ...prev, image: key } as any));
                 setIsUploading(false);
             };
-            img.src = publicUrl;
+            img.src = imageUrl(key);
 
         } catch (err) {
             console.error("Upload error:", err);
-            alert("이미지 업로드 실패!");
+            alert(err instanceof Error ? err.message : "이미지 업로드 실패!");
             setIsUploading(false);
         }
     };
 
     const fetchStorageImages = useCallback(async () => {
-        if (!supabase) return;
         setIsLoadingGallery(true);
         try {
-            // Fetch images from within season folders (nodes/1, nodes/2, etc.)
-            const allFiles: any[] = [];
-            const folders = ['1', '2', '3']; // Supported seasons
-
-            for (const f of folders) {
-                const { data, error } = await supabase.storage.from('story-images').list(`nodes/${f}`, {
-                    limit: 100,
-                    sortBy: { column: 'name', order: 'desc' }
-                });
-                if (data) {
-                    // .emptyFolderPlaceholder 파일 등을 제외하고 이미지 파일만 필터링
-                    const validFiles = data
-                        .filter(img => !img.name.startsWith('.') && img.metadata)
-                        .map(img => ({ ...img, folder: f }));
-                    allFiles.push(...validFiles);
-                }
-            }
-
-            setStorageImages(allFiles);
+            // Worker가 R2 키 목록을 그대로 돌려준다 ('nodes/2/1769354330180.webp' 형태).
+            const keys = await api.fetchImageKeys();
+            setStorageImages(keys.map(key => ({ key, name: key.split('/').pop()! })));
         } catch (err) {
             console.error("Failed to fetch images:", err);
         } finally {
             setIsLoadingGallery(false);
         }
-    }, [season]); // season에 따라 달라질 수 있으므로 의존성 추가 (현재는 모든 폴더를 돌지만 확장을 위해)
+    }, []);
 
 
     const fetchMasterStories = async () => {
-        if (!supabase) return;
         setIsFetchingMasters(true);
         try {
-            const { data, error } = await supabase
-                .from('master_stories')
-                .select('*')
-                .order('label', { ascending: true });
-            if (error) throw error;
-            setMasterStories(data || []);
+            const data = await api.fetchAllStories();
+            setMasterStories([...data].sort((a, b) => a.label.localeCompare(b.label)));
         } catch (err) {
             console.error("Fetch master stories error:", err);
         } finally {
@@ -2012,24 +1830,22 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                                     {storageImages
-                                        .filter(img => galleryFolder === 'all' || img.folder === galleryFolder)
+                                        .filter(img => galleryFolder === 'all' || img.key.startsWith(`nodes/${galleryFolder}/`))
                                         .map((img, idx) => {
-                                            const publicUrl = supabase?.storage.from('story-images').getPublicUrl(`nodes/${img.folder}/${img.name}`).data.publicUrl;
+                                            const publicUrl = imageUrl(img.key);
                                             return (
                                                 <button
                                                     key={idx}
                                                     onClick={() => {
-                                                        if (publicUrl) {
-                                                            setFormData(prev => ({ ...prev, image: publicUrl }));
-                                                            setShowGallery(false);
-                                                        }
+                                                        setFormData(prev => ({ ...prev, image: img.key }));
+                                                        setShowGallery(false);
                                                     }}
                                                     className="group relative aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-indigo-500 transition-all hover:shadow-2xl hover:shadow-indigo-500/20"
                                                 >
                                                     <img src={publicUrl} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={img.name} loading="lazy" />
                                                     <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/90 to-transparent">
                                                         <p className="text-[9px] font-mono text-white/50 truncate mb-1">{img.name}</p>
-                                                        <span className="text-[10px] font-black bg-indigo-500 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter">Season {img.folder}</span>
+                                                        <span className="text-[10px] font-black bg-indigo-500 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter">Season {img.key.split('/')[1]}</span>
                                                     </div>
                                                     <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/30 transition-all flex items-center justify-center">
                                                         <div className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all shadow-2xl">
@@ -2238,7 +2054,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                     {formData.image ? (
                                                         <>
                                                             <img
-                                                                src={formData.image.startsWith('http') || formData.image.startsWith('data:') ? formData.image : `${basePath}/images/${formData.image}`}
+                                                                src={imageUrl(formData.image)}
                                                                 className="w-full h-full object-contain bg-black/40"
                                                                 alt="Preview"
                                                             />
@@ -2249,7 +2065,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                                 </label>
                                                                 {formData.image && (
                                                                     <a
-                                                                        href={formData.image.startsWith('http') || formData.image.startsWith('data:') ? formData.image : `${basePath}/images/${formData.image}`}
+                                                                        href={imageUrl(formData.image)}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         className="text-[10px] text-white/60 hover:text-white underline font-bold"
@@ -2485,14 +2301,6 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 isAdmin && (
                     <div className="fixed bottom-24 right-6 pt-2 z-[60] flex flex-col gap-3 items-end">
                         <button
-                            onClick={handleSyncToDeploy}
-                            disabled={isSyncing}
-                            className={`bg-amber-600 text-white px-6 py-3 rounded-full shadow-xl hover:bg-amber-700 flex items-center gap-2 font-bold transition-all active:scale-95 ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                            <Monitor size={20} className={isSyncing ? 'animate-spin' : ''} />
-                            {isSyncing ? '동기화 중...' : '운영 서버로 동기화'}
-                        </button>
-                        <button
                             onClick={() => {
                                 fetchMasterStories();
                                 setMasterSearchQuery(''); // Reset search when opening
@@ -2523,7 +2331,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             }
 
             {/* Discreet Admin Toggle (Guarded for Production) */}
-            {!isProd && process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+            {(
                 <div className="fixed bottom-6 right-6 z-[60]">
                     <button
                         onClick={toggleAdmin}
@@ -2588,23 +2396,15 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 </button>
                                 <button
                                     onClick={async () => {
-                                        if (!supabase || !sessionPassword.current) return;
                                         setIsSavingUpdate(true);
                                         try {
-                                            const { data, error } = await supabase.rpc('save_app_update', {
-                                                p_content: updateLogContent,
-                                                p_password: sessionPassword.current
-                                            });
-                                            if (data && !error) {
-                                                alert("업데이트 로그가 저장되었습니다.");
-                                                setLastUpdateAt(new Date().toISOString());
-                                                setShowUpdateLog(false);
-                                            } else {
-                                                alert("저장 실패: " + (error?.message || "권한이 없습니다."));
-                                            }
+                                            await api.saveUpdateLog(updateLogContent);
+                                            alert("업데이트 로그가 저장되었습니다.");
+                                            setLastUpdateAt(new Date().toISOString());
+                                            setShowUpdateLog(false);
                                         } catch (err) {
                                             console.error(err);
-                                            alert("오류 발생");
+                                            alert(err instanceof Error ? err.message : "오류 발생");
                                         } finally {
                                             setIsSavingUpdate(false);
                                         }

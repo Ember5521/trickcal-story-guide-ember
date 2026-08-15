@@ -8,8 +8,6 @@ import {
 } from 'lucide-react';
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
-// 관리자 쓰기 경로는 아직 Supabase (Phase 4에서 Worker로 이전).
-import { supabase } from '../lib/supabase';
 import YouTubeEmbed from './YouTubeEmbed';
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -105,7 +103,6 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     // Filter State
     const [importanceFilter, setImportanceFilter] = useState<0 | 1 | 2>(savedSettings?.importanceFilter ?? 0);
 
-    const sessionPassword = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const pendingScrollStoryId = useRef<string | null>(null);
 
@@ -190,7 +187,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             m_x: ln.m_x,
                             m_y: ln.m_y,
                             watched: !!hist[ln.story_id || ln.id],
-                            image: imageUrl(masterData.image)
+                            image: masterData.image   // 상대 키 그대로
                         }
                     } as Node;
                 });
@@ -283,12 +280,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         localStorage.setItem('user_story_memo', memoText);
     }, [memoText]);
 
-    // Save Data to Supabase (Preserving Edges via Read-before-write)
     const syncToCloud = async (newNodes: Node[]) => {
-        if (!supabase || !isAdmin || !sessionPassword.current) {
-            console.error("Mobile Cloud sync: Pre-conditions failed", { hasSupabase: !!supabase, isAdmin, hasPassword: !!sessionPassword.current });
-            return false;
-        }
+        if (!isAdmin) return false;
         try {
             // Convert to layout format
             const layoutNodes = newNodes.map(n => {
@@ -310,30 +303,11 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 return { ...base, story_id: (n.data as any).story_id || n.id };
             });
 
-            console.log(`Mobile Cloud sync starting for ${viewType} ${season}...`, { nodeCount: layoutNodes.length });
-
-            const { data, error } = await supabase.rpc('save_story_layout', {
-                p_view_type: viewType,
-                p_season: season,
-                p_nodes: layoutNodes,
-                p_edges: edges,
-                p_password: sessionPassword.current
-            });
-
-            if (error) {
-                console.error("Mobile Cloud sync RPC error:", error);
-                return false;
-            }
-
-            if (data === false) {
-                console.error("Mobile Cloud sync failed: RPC returned false (Password mismatch?)");
-                return false;
-            }
-
-            console.log("Mobile Cloud sync successful!");
+            await api.saveLayout(viewType, season, layoutNodes, edges);
             return true;
         } catch (err) {
-            console.error("Mobile Cloud sync exception:", err);
+            console.error("레이아웃 저장 실패:", err);
+            alert(err instanceof Error ? err.message : "저장에 실패했습니다.");
             return false;
         }
     };
@@ -499,15 +473,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     }, [season]);
 
     const fetchMasterStories = async () => {
-        if (!supabase) return;
         setIsFetchingMasters(true);
         try {
-            const { data, error } = await supabase
-                .from('master_stories')
-                .select('*')
-                .order('label', { ascending: true });
-            if (error) throw error;
-            setMasterStories(data || []);
+            const data = await api.fetchAllStories();
+            setMasterStories([...data].sort((a, b) => a.label.localeCompare(b.label)));
         } catch (err) {
             console.error("Fetch master stories error:", err);
         } finally {
@@ -523,7 +492,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             data: {
                 label: m.label,
                 type: m.type,
-                image: imageUrl(m.image),
+                image: m.image,
                 youtubeUrl: m.youtube_url,
                 fullVideoUrl: m.full_video_url,
                 protagonist: m.protagonist,
@@ -542,19 +511,17 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             if (ok) alert("저장되었습니다.");
             else if (!confirm("저장 실패. 무시하고 나갈까요?")) return;
             setIsAdmin(false);
-            sessionPassword.current = null;
+            api.logout();
         } else {
             const pw = prompt("관리자 비밀번호를 입력하세요.");
             if (!pw) return;
-            if (!supabase) { alert("DB 연결 실패"); return; }
-            const { data: isValid, error } = await supabase.rpc('verify_admin_password', { input_password: pw });
-            if (error) { alert("인증 오류"); return; }
-            if (isValid) {
-                sessionPassword.current = pw;
-                setIsAdmin(true);
-            } else {
-                alert("권한이 없습니다.");
+            try {
+                await api.login(pw);
+            } catch (err) {
+                alert(err instanceof Error ? err.message : "인증에 실패했습니다.");
+                return;
             }
+            setIsAdmin(true);
         }
     };
 
@@ -643,16 +610,14 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !supabase) return;
+        if (!file) return;
         setIsUploading(true);
         try {
-            const fileName = `${season}/${Date.now()}.${file.name.split('.').pop()}`;
-            const { error: uploadError } = await supabase.storage.from('story-images').upload(`nodes/${fileName}`, file);
-            if (uploadError) throw uploadError;
-            const { data: { publicUrl } } = supabase.storage.from('story-images').getPublicUrl(`nodes/${fileName}`);
-            setFormData(prev => ({ ...prev, image: publicUrl }));
+            // R2 키를 그대로 담는다 (D1에 저장되는 값과 동일).
+            const key = await api.uploadImage(file, season);
+            setFormData(prev => ({ ...prev, image: key }));
         } catch (err) {
-            alert("업로드 실패");
+            alert(err instanceof Error ? err.message : "업로드 실패");
         } finally {
             setIsUploading(false);
         }
@@ -661,7 +626,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const getImageUrl = (imagePath: string) => {
         if (!imagePath) return `${basePath}/images/placeholder.jpg`;
         if (imagePath.startsWith('http') || imagePath.startsWith('data:')) return imagePath;
-        return `${basePath}/images/${imagePath}`;
+        return imageUrl(imagePath);
     };
 
     const scrollContainerHeight = layoutInfo.totalHeight;
@@ -697,7 +662,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     </div>
 
                     {/* Admin Center Group */}
-                    {!isProd && process.env.NEXT_PUBLIC_ENABLE_ADMIN === 'true' && (
+                    {(
                         <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/30 rounded-2xl border border-white/5 shadow-inner">
                             <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-transparent border-none text-slate-800 opacity-[0.15] hover:opacity-50'}`}>
                                 <Shield size={14} />
@@ -1089,43 +1054,23 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             )}
                             <button onClick={async () => {
                                 if (!formData.label) { alert("제목!"); return; }
-                                if (!supabase || !sessionPassword.current) return;
 
                                 try {
                                     let storyId = (formData as any).story_id;
 
-                                    if (editingNode && storyId) {
-                                        // Update existing master story
-                                        await supabase.rpc('update_master_story', {
-                                            p_id: storyId,
-                                            p_label: formData.label,
-                                            p_type: formData.type,
-                                            p_image: formData.image,
-                                            p_youtube_url: formData.youtubeUrl || '',
-                                            p_protagonist: formData.protagonist || '',
-                                            p_part_label: formData.partLabel || '',
-                                            p_importance: formData.importance || 0,
-                                            p_password: sessionPassword.current,
-                                            p_split_type: formData.splitType || 'none',
-                                            p_full_video_url: formData.fullVideoUrl || ''
-                                        });
-                                    } else {
-                                        // Create new master story
-                                        const { data: newId, error } = await supabase.rpc('create_master_story', {
-                                            p_label: formData.label,
-                                            p_type: formData.type,
-                                            p_image: formData.image,
-                                            p_youtube_url: formData.youtubeUrl || '',
-                                            p_protagonist: formData.protagonist || '',
-                                            p_part_label: formData.partLabel || '',
-                                            p_importance: formData.importance || 0,
-                                            p_password: sessionPassword.current,
-                                            p_split_type: formData.splitType || 'none',
-                                            p_full_video_url: formData.fullVideoUrl || ''
-                                        });
-                                        if (error || !newId) throw new Error("Master story creation failed");
-                                        storyId = newId;
-                                    }
+                                    const saved = await api.saveStory({
+                                        id: editingNode && storyId ? storyId : undefined,
+                                        label: formData.label,
+                                        type: formData.type,
+                                        image: api.imageKey(formData.image),
+                                        youtube_url: formData.youtubeUrl || '',
+                                        protagonist: formData.protagonist || '',
+                                        part_label: formData.partLabel || '',
+                                        importance: formData.importance || 0,
+                                        split_type: formData.splitType || 'none',
+                                        full_video_url: formData.fullVideoUrl || '',
+                                    });
+                                    storyId = saved.id;
 
                                     let newNodes: Node[];
                                     if (editingNode) {
@@ -1544,23 +1489,15 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             </button>
                             <button
                                 onClick={async () => {
-                                    if (!supabase || !sessionPassword.current) return;
                                     setIsSavingUpdate(true);
                                     try {
-                                        const { data, error } = await supabase.rpc('save_app_update', {
-                                            p_content: updateLogContent,
-                                            p_password: sessionPassword.current
-                                        });
-                                        if (data && !error) {
-                                            alert("업데이트 로그가 저장되었습니다.");
-                                            setLastUpdateAt(new Date().toISOString());
-                                            setShowUpdateLog(false);
-                                        } else {
-                                            alert("저장 실패: " + (error?.message || "권한이 없습니다."));
-                                        }
+                                        await api.saveUpdateLog(updateLogContent);
+                                        alert("업데이트 로그가 저장되었습니다.");
+                                        setLastUpdateAt(new Date().toISOString());
+                                        setShowUpdateLog(false);
                                     } catch (err) {
                                         console.error(err);
-                                        alert("오류 발생");
+                                        alert(err instanceof Error ? err.message : "오류 발생");
                                     } finally {
                                         setIsSavingUpdate(false);
                                     }

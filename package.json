@@ -20,7 +20,6 @@
     "tailwind-merge": "latest"
   },
   "devDependencies": {
-    "@supabase/supabase-js": "^2.93.3",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",

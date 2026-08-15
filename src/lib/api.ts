@@ -13,11 +13,27 @@ const TOKEN_KEY = 'admin_token';
 // ---------------------------------------------------------------- 이미지
 
 /**
- * D1에는 'nodes/2/1769354330180.webp' 같은 상대 경로가 저장돼 있다.
+ * D1에는 'nodes/2/1769354330180.webp' 같은 상대 키가 저장돼 있다.
  * 절대 URL을 저장하지 않으므로 서빙 호스트를 바꿔도 데이터를 건드릴 필요가 없다.
+ *
+ * 이미 절대 주소인 값은 그대로 통과시킨다. 두 번 적용돼도 망가지지 않아야
+ * 한다 (편집 폼이 렌더용 값을 되쓰는 사고를 한 번 겪었다).
  */
-export const imageUrl = (key?: string | null): string =>
-    key ? `${API_BASE}/img/${key}` : '';
+export const imageUrl = (key?: string | null): string => {
+    if (!key) return '';
+    if (/^(https?:|data:)/.test(key)) return key;
+    return `${API_BASE}/img/${key}`;
+};
+
+/**
+ * 저장 직전에 쓴다. 렌더용 절대 URL이 섞여 들어와도 D1에는 항상 상대 키만
+ * 들어가도록 되돌린다.
+ */
+export const imageKey = (value?: string | null): string => {
+    if (!value) return '';
+    const m = value.match(/\/img\/(.+)$/);
+    return m ? decodeURIComponent(m[1]) : value;
+};
 
 // ---------------------------------------------------------------- 세션
 

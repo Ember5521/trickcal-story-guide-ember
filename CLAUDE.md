@@ -4,70 +4,109 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Korean-language story-order guide for the game **트릭컬 (Trickcal)**. Renders story episodes as a pannable node graph (React Flow) so players can follow a recommended viewing order. Static Next.js export hosted on GitHub Pages; all content lives in Supabase.
+A Korean-language story-order guide for the game **트릭컬 (Trickcal)**. Renders story episodes as a pannable node graph (React Flow) so players can follow a recommended viewing order.
+
+The site is a static Next.js export on GitHub Pages. Everything dynamic — data, images, admin auth — lives behind a single Cloudflare Worker.
+
+```
+GitHub Pages (앱 셸)  ──►  Worker  ──┬─►  D1  노드 데이터
+                                     └─►  R2  이미지
+```
 
 ## Commands
 
 ```bash
-npm run dev      # local dev (admin editing only works here — see below)
-npm run build    # next build -> static export into ./out
+npm run dev      # 앱 (localhost:3000)
+npm run build    # 정적 export -> ./out
 npm run lint
-npx tsx scripts/migrate.ts   # one-off copy of tables + storage between two Supabase projects
+
+# Worker (worker/ 안에서. wrangler 는 worker 의 devDependency)
+node node_modules/wrangler/bin/wrangler.js dev --local --port 8788
+node node_modules/wrangler/bin/wrangler.js deploy
+node node_modules/wrangler/bin/wrangler.js d1 execute trickcal --local --file=../data/schema.sql
+node node_modules/wrangler/bin/wrangler.js d1 execute trickcal --remote -y --command "SELECT ..."
+
+# 검증
+node scripts/verify-d1.mjs [--remote]                 # D1 내용을 data/backup 과 대조
+node scripts/smoke-worker.mjs [BASE_URL] [PASSWORD]   # Worker 엔드포인트 전수 점검
 ```
 
-No test suite exists.
+There is no test framework; the two scripts above are the checks.
+
+**Windows 주의**: Node 20 은 `.cmd` 직접 spawn 을 막는다(EINVAL). 스크립트에서 wrangler 를 부를 때는 `npx`/`npx.cmd` 가 아니라 `node worker/node_modules/wrangler/bin/wrangler.js` 를 쓴다. 또 `--command` 에 SQL 을 넘길 때 `shell: true` 를 주면 공백 단위로 쪼개지므로 쓰지 않는다.
 
 ## Deployment
 
-`.github/workflows/deploy.yml` builds and pushes to GitHub Pages on push to **`main`**. Day-to-day work happens on `develop`; nothing deploys until merged to `main`.
+`.github/workflows/deploy.yml` 이 `main` 푸시마다 빌드해서 GitHub Pages 로 배포한다. 일상 작업은 `develop`, 배포는 `main` 머지.
 
-- Live site: https://ember5521.github.io/trickcal-story-guide-ember/
-- The repo was renamed (`trickcal-story-guide` → `trickcal-story-guide-ember`); the local `origin` still uses the old name and works via GitHub's 301 redirect.
-- `next.config.js` hardcodes `repoName = 'trickcal-story-guide-ember'` for `basePath`/`assetPrefix` under `NODE_ENV=production`. Changing the repo name means changing this too.
-- `NEXT_PUBLIC_*` values are injected at build time from GitHub Actions vars/secrets. They are baked into the client bundle.
+- 사이트: https://ember5521.github.io/trickcal-story-guide-ember/
+- `next.config.js` 가 `repoName = 'trickcal-story-guide-ember'` 로 `basePath`/`assetPrefix` 를 고정한다. 리포명이 바뀌면 여기도 바꿔야 한다.
+- Worker 는 GitHub 배포와 무관하게 `wrangler deploy` 로 따로 올린다.
 
-## Two Supabase projects
+## Worker API
 
-`.env.local` holds both:
+`worker/src/index.ts` 하나에 전부 들어 있다. 바인딩은 `DB`(D1), `IMAGES`(R2), secret 은 `ADMIN_PASSWORD`.
 
-- **dev** (`NEXT_PUBLIC_SUPABASE_URL`) — what `npm run dev` reads and writes. Editing happens here.
-- **deploy** (`DEPLOY_SUPABASE_URL`) — what the built site reads.
+```
+공개    GET  /api/layout?view=&season=   레이아웃 + 참조 스토리를 서버에서 조인해 반환
+        GET  /api/updates
+        GET  /img/<key>                  R2 이미지
+        POST /api/login                  비밀번호 -> 세션 토큰
 
-`src/app/api/sync-db/route.ts` (`POST /api/sync-db`, `mode: 'push' | 'pull'`) copies tables and the `story-images` bucket between them, rewriting the project-ref inside every stored URL as it goes. It syncs incrementally using `admin_settings.last_synced_at` on the target.
+관리자  POST /api/layout  /api/story  /api/image  /api/update-log
+        GET  /api/stories  /api/images
+```
 
-**This route only runs under `next dev`.** `output: 'export'` means the static build ships no server, so the API route and the `"use server"` action in `src/app/actions.ts` are dead code in production. Same for admin mode, which is gated on `!isProd && NEXT_PUBLIC_ENABLE_ADMIN === 'true'`. The published site is strictly read-only.
+`/api/layout` 이 조인까지 하는 것이 핵심이다. 예전에는 클라이언트가 레이아웃을 받고 `story_id` 를 모아 두 번째 요청을 보냈다.
 
-## Data model
+### 요금이 발생하지 않는 이유 (건드리면 깨지는 전제)
 
-Four tables, normalized so that content and placement are separate:
+이 프로젝트는 한 번 Supabase cached egress 무료 한도를 초과해 멈춘 적이 있다. 원인은 앞단 Cloudflare 워커가 캐시를 전혀 하지 않는 통과 프록시여서, 호스트명만 가린 채 모든 요청이 Supabase CDN 에 도달한 것이었다.
 
-- **`master_stories`** — the episode itself: `label`, `type`, `image`, `youtube_url`, `full_video_url`, `protagonist`, `importance`, `part_label`, `split_type`. One row per episode, shared across all views.
-- **`story_layouts`** — one row per `(view_type, season)` pair, holding a `nodes` JSON array and an `edges` JSON array. Each layout node stores only `id`, `story_id`, `x/y/w/h`, plus `m_x`/`m_y` (separate mobile coordinates) and `splitType`.
-- **`admin_settings`** — single row (`id = 1`), password + `last_synced_at`.
-- **`app_updates`** — changelog entries surfaced as an in-app notification bell.
+현재 구조가 그 재발을 막는 방식:
 
-Load path (`StoryCanvas.tsx` ~line 1010, mirrored in `MobileCanvas.tsx` ~line 130): fetch the one `story_layouts` row for the current `(viewType, season)`, collect its `story_id`s, then fetch those `master_stories` in a single `.in()` query and merge. Layout nodes typed `annotationNode` carry inline `content` and have no `story_id`.
+- **R2 버킷은 비공개.** 이미지에 닿는 경로가 Worker 뿐이다.
+- **Workers 무료 플랜은 한도 초과 시 과금이 아니라 요청 거부.** 따라서 Worker 가 먼저 끊기고 R2 는 무료 한도에 닿지 못한다.
+- **R2 는 egress 요금 항목 자체가 없다.**
 
-`view_type` is one of `recommended | chrono | release | elflix`. `season` is an integer (1–3 currently).
+그러므로 다음 두 가지를 하면 안전장치가 사라진다:
+1. Workers 를 유료 플랜으로 올리는 것
+2. R2 버킷을 public 으로 만들거나 `r2.dev`/커스텀 도메인을 붙이는 것
 
-All writes go through Postgres RPC functions, never direct table writes: `verify_admin_password`, `save_story_layout`, `update_master_story`, `create_master_story`, `save_app_update`. Each takes the admin password and checks it inside the database. The SQL for these lives only in Supabase (`*.sql` is gitignored).
+이미지 응답에 `Cache-Control: immutable` 을 붙이고 `caches.default` 를 쓰는 것도 같은 이유다. 키에 타임스탬프가 들어 있어 내용이 바뀌면 키도 바뀌므로 immutable 이 안전하다.
 
-## Client state
+### 보안
 
-Nothing about the user is stored server-side. All per-user state is `localStorage`:
+관리자 UI 가 공개 번들에 실리므로 숨김은 방어가 아니다. 실제 방어선:
 
-`view_mode` (pc/mobile override) · `user_settings` (season + viewType) · `watched_history_s{season}` · `last_watched_story` · `user_story_memo` · `intro_completed` · `last_read_update_at`
+- 비밀번호는 Worker secret. 상수 시간 비교
+- 로그인 실패 IP 당 15분에 10회 -> 15분 잠금 (`login_attempts` 테이블)
+- 세션 토큰은 HMAC-SHA256, 8시간 만료. **비밀번호로 서명하므로 비밀번호를 바꾸면 기존 세션이 전부 무효화된다**
+- CORS 는 `ALLOWED_ORIGINS` 로 제한. `*` 로 열면 남의 사이트가 이 Worker 를 통해 이미지를 끌어다 쓰면서 무료 요청 한도를 소모한다
+- 업로드는 5MB 이하 + webp/png/jpeg 만
 
-## Image pipeline
+## 데이터 모델
 
-Images live in the Supabase `story-images` bucket under `nodes/{season}/`. Stored URLs in the deploy DB already point at the Cloudflare Worker (`NEXT_PUBLIC_IMAGE_PROXY_URL`); `sync-db`'s `transformUrls` rewrites them during push.
+D1 (SQLite). 스키마는 `data/schema.sql`, 원본 백업은 `data/backup/*.json`.
 
-`getProxyUrl()` is duplicated verbatim in `StoryCanvas.tsx`, `MobileCanvas.tsx`, and `StoryNode.tsx` — it maps `https://{ref}.supabase.co/storage/v1/object/public/{path}` to `{proxy}/{ref}/{path}`. Change one, change all three.
+- **`master_stories`** — 에피소드 자체. `label`, `type`, `image`, `youtube_url`, `full_video_url`, `protagonist`, `part_label`, `split_type`, `importance`. 모든 뷰가 공유한다.
+- **`story_layouts`** — `(view_type, season)` 당 한 행. `nodes`/`edges` 는 JSON 문자열(TEXT). 레이아웃 노드는 `id`, `story_id`, `x/y/w/h`, 모바일 전용 좌표 `m_x`/`m_y`, `splitType` 만 담는다.
+- **`app_updates`** — 앱 내 알림 벨에 뜨는 변경 로그. 한 행(`id = 1`).
+- **`login_attempts`** — IP 별 로그인 실패 카운터.
 
-**Known problem:** the Worker is a pass-through and caches nothing. Every image request still reaches Supabase's Smart CDN, and Supabase bills those bytes as *Cached Egress* — which is currently over the free-tier limit. Verified by requesting the same image repeatedly through the same Cloudflare colo: `sb-request-id` differs every time, and the response carries only Supabase's headers. The proxy hides the hostname; it does not reduce egress. Fixing this means either adding `caches.default` to the Worker (source is in the Cloudflare dashboard, not this repo) or moving the ~12.5 MB of images into `public/` so GitHub Pages serves them.
+`view_type` 은 `recommended | release | elflix`, `season` 은 1~3. (`chrono` 뷰와 season 101 은 UI 에서 선택 불가능한 죽은 데이터여서 이관 때 버렸다.)
 
-## Layout code
+`image` 는 **상대 키**(`nodes/2/1769354330180.webp`)로 저장한다. 절대 URL 을 넣지 않으므로 서빙 호스트를 바꿔도 데이터를 건드릴 필요가 없다. 화면에 쓸 때 `imageUrl()` 로 감싼다.
 
-`StoryCanvas.tsx` (PC, ~3000 lines) and `MobileCanvas.tsx` (~1600 lines) are near-independent implementations of the same app, chosen in `src/app/page.tsx` by user-agent and viewport width, with a manual toggle persisted to `view_mode`. Fixes to shared behavior usually need applying twice; mobile reads `m_x`/`m_y` where PC reads `x`/`y`.
+삭제 엔드포인트는 없다. 노드를 지워도 `master_stories` 행은 남는다.
 
-PC zoom is scaled: `SCALE_OUTER = 0.55` means React Flow's internal zoom `0.55` is displayed to the user as `100%`. Use `toDisplayZoom` / `fromDisplayZoom` rather than raw zoom values.
+## 클라이언트
+
+`src/lib/api.ts` 가 Worker 와 말하는 유일한 지점이다. 읽기/쓰기/이미지 URL/세션 토큰(sessionStorage)이 전부 여기 모여 있다.
+
+`StoryCanvas.tsx` (PC, ~2600줄) 와 `MobileCanvas.tsx` (~1500줄) 는 같은 앱의 거의 독립적인 두 구현이다. `src/app/page.tsx` 가 user-agent 와 화면폭으로 고르고, 수동 토글은 `localStorage.view_mode` 에 남는다. **공통 동작을 고칠 때는 대개 두 곳 다 고쳐야 한다.** 모바일은 `m_x`/`m_y` 를, PC 는 `x`/`y` 를 읽는다.
+
+PC 줌은 스케일이 걸려 있다. `SCALE_OUTER = 0.55` 이므로 React Flow 내부 줌 0.55 가 사용자에게 100% 로 보인다. 원시 줌 값 대신 `toDisplayZoom` / `fromDisplayZoom` 을 쓴다.
+
+사용자 상태는 전부 `localStorage` 이고 서버에 저장되지 않는다:
+`view_mode` · `user_settings` · `watched_history_s{season}` · `last_watched_story` · `user_story_memo` · `intro_completed` · `last_read_update_at`

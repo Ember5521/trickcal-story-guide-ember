@@ -3,6 +3,7 @@
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps, NodeResizer } from 'reactflow';
 import { Youtube, User, Star, CheckCircle, Sprout } from 'lucide-react';
+import { imageUrl } from '../lib/api';
 
 export interface StoryNodeData {
     label?: string;
@@ -119,9 +120,6 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
     const showTitle = false; // Universal title hiding as requested
     const hasContent = (showTitle && data.label) || data.partLabel || data.youtubeUrl || data.fullVideoUrl;
 
-    const isProd = process.env.NODE_ENV === 'production';
-    const basePath = isProd ? '/trickcal-story-guide-ember' : '';
-
     return (
         <div className={`
       relative transition-all duration-500 w-full h-full flex flex-col rounded-2xl
@@ -172,11 +170,8 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                 <div className={`relative ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>
                     {data.image ? (
                         (() => {
-                            // data.image 는 캔버스가 이미 imageUrl()로 절대 주소를 붙여 넘긴다.
-                            // 그렇지 않은 값(로컬 자산)만 basePath 기준으로 해석한다.
-                            const imgSrc = data.image.startsWith('http') || data.image.startsWith('data:')
-                                ? data.image
-                                : `${basePath}/images/${data.image}`;
+                            // 노드 데이터에는 상대 키가 들어 있다. 변환은 여기서만 한다.
+                            const imgSrc = imageUrl(data.image);
 
                             return (
                                 <img
