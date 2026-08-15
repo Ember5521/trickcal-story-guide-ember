@@ -6,6 +6,9 @@ import {
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
     Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet
 } from 'lucide-react';
+import * as api from '../lib/api';
+import { imageUrl } from '../lib/api';
+// 관리자 쓰기 경로는 아직 Supabase (Phase 4에서 Worker로 이전).
 import { supabase } from '../lib/supabase';
 import YouTubeEmbed from './YouTubeEmbed';
 
@@ -14,27 +17,6 @@ const repoName = 'trickcal-story-guide-ember';
 const basePath = isProd ? `/${repoName}` : '';
 const isDbConfigured = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const TABLE_NAME = process.env.NEXT_PUBLIC_STORY_TABLE_NAME || 'story_data';
-const IMAGE_PROXY_URL = process.env.NEXT_PUBLIC_IMAGE_PROXY_URL || '';
-
-// Helper to get proxied image URL via Cloudflare
-const getProxyUrl = (originalUrl: string) => {
-    if (!originalUrl || !IMAGE_PROXY_URL) return originalUrl;
-    // Only proxy Supabase Storage URLs
-    if (originalUrl.includes('.supabase.co/storage/v1/object/public/')) {
-        try {
-            const url = new URL(originalUrl);
-            const projId = url.hostname.split('.')[0];
-            const path = url.pathname.replace('/storage/v1/object/public', '');
-            const cleanPath = path.startsWith('/') ? path : '/' + path;
-            const cleanProxyBase = IMAGE_PROXY_URL.endsWith('/') ? IMAGE_PROXY_URL.slice(0, -1) : IMAGE_PROXY_URL;
-            return `${cleanProxyBase}/${projId}${cleanPath}`;
-        } catch (e) {
-            return originalUrl;
-        }
-    }
-    return originalUrl;
-};
-
 interface StoryNodeData {
     label: string;
     type: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation' | 'frontier';
@@ -73,7 +55,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         return null;
     }, []);
     const [season, setSeason] = useState(savedSettings?.season ?? 1);
-    const [viewType, setViewType] = useState<'recommended' | 'chrono' | 'release' | 'elflix'>(savedSettings?.viewType ?? 'release');
+    const [viewType, setViewType] = useState<'recommended' | 'release' | 'elflix'>(savedSettings?.viewType ?? 'release');
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
@@ -133,106 +115,89 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             setIsLoading(true);
             setNodes([]);
             try {
-                if (supabase) {
-                    const { data: layout, error: lError } = await supabase
-                        .from('story_layouts')
-                        .select('*')
-                        .eq('view_type', viewType)
-                        .eq('season', season)
-                        .single();
+                // Worker가 레이아웃과 참조 스토리를 한 번에 조인해 돌려준다.
+                const layout = await api.fetchLayout(viewType, season);
+                const layoutNodes = layout.nodes as any[];
 
-                    if (layout && !lError) {
-                        const layoutNodes = layout.nodes as any[];
-                        const storyIds = layoutNodes
-                            .filter(ln => ln.type !== 'annotationNode')
-                            .map(ln => ln.story_id);
-
-                        const { data: masters, error: mError } = await supabase
-                            .from('master_stories')
-                            .select('*')
-                            .in('id', storyIds);
-
-                        if (masters && !mError) {
-                            const masterMap = new Map(masters.map(m => [m.id, m]));
-                            const histStr = localStorage.getItem(`watched_history_s${season}`) || '{}';
-                            const hist = JSON.parse(histStr);
-
-                            const processedNodes = layoutNodes.map(ln => {
-                                if (ln.type === 'annotationNode') {
-                                    return {
-                                        id: ln.id,
-                                        position: { x: ln.x || 0, y: ln.y || 0 },
-                                        width: ln.w || 96,
-                                        height: ln.h || 96,
-                                        data: {
-                                            label: ln.content || 'Curation Note',
-                                            type: 'annotation',
-                                            content: ln.content,
-                                            image: '',
-                                            youtubeUrl: '',
-                                            importance: 0
-                                        }
-                                    } as Node;
-                                }
-
-                                const master = masterMap.get(ln.story_id);
-                                const masterData = master || {};
-
-                                // Consistent defaults for migrated data
-                                const getMigratedDimensions = (type: string) => {
-                                    if (type === 'main') return { w: 260, h: 380 };
-                                    if (type === 'theme' || type === 'theme_x') return { w: 320, h: 200 };
-                                    return { w: 300, h: 200 };
-                                };
-
-                                const { w: defW, h: defH } = getMigratedDimensions(masterData.type || 'main');
-
-                                // Robust fallback: If width/height is missing OR too small (e.g. 0 from bad migration), use default
-                                // SPECIAL FIX: Season 2 Main nodes appearing as wide (Theme-like) -> Force to Portrait
-                                let finalW = (typeof ln.w === 'number' && ln.w > 50) ? ln.w : defW;
-                                let finalH = (typeof ln.h === 'number' && ln.h > 50) ? ln.h : defH;
-
-                                // Note: season var might not be available here directly if it's propped differently, 
-                                // but MobileCanvas props usually have season or we check masterData.story_id range or similar if strictly needed.
-                                // However, MobileCanvas usually renders one season at a time.
-                                // Checking context: MobileCanvas receives 'season' as prop? No, it has its own state. 
-                                // Let's check state 'season' usage in MobileCanvas. Assuming 'season' state variable exists in scope.
-                                if (season === 2 && (masterData.type === 'main' || !masterData.type)) {
-                                    if (finalW > finalH) {
-                                        finalW = 260;
-                                        finalH = 380;
-                                    }
-                                }
-
-                                return {
-                                    id: ln.id,
-                                    position: { x: ln.x || 0, y: ln.y || 0 },
-                                    width: finalW,
-                                    height: finalH,
-                                    style: { width: finalW, height: finalH },
-                                    data: {
-                                        ...masterData,
-                                        youtubeUrl: masterData.youtube_url,
-                                        fullVideoUrl: masterData.full_video_url,
-                                        partLabel: masterData.part_label,
-                                        story_id: ln.story_id,
-                                        m_x: ln.m_x,
-                                        m_y: ln.m_y,
-                                        watched: !!hist[ln.story_id || ln.id],
-                                        image: getProxyUrl(masterData.image)
-                                    }
-                                } as Node;
-                            });
-                            setNodes(processedNodes);
-                            setEdges(layout.edges || []);
-                            setIsLoaded(true);
-                        }
-                    } else {
-                        // If no layout found, clear nodes
-                        setNodes([]);
-                        setEdges([]);
-                    }
+                if (layoutNodes.length === 0) {
+                    setNodes([]);
+                    setEdges([]);
+                    return;
                 }
+
+                const masterMap = new Map(layout.stories.map(m => [m.id, m as any]));
+                const hist = JSON.parse(localStorage.getItem(`watched_history_s${season}`) || '{}');
+
+                const processedNodes = layoutNodes.map(ln => {
+                    if (ln.type === 'annotationNode') {
+                        return {
+                            id: ln.id,
+                            position: { x: ln.x || 0, y: ln.y || 0 },
+                            width: ln.w || 96,
+                            height: ln.h || 96,
+                            data: {
+                                label: ln.content || 'Curation Note',
+                                type: 'annotation',
+                                content: ln.content,
+                                image: '',
+                                youtubeUrl: '',
+                                importance: 0
+                            }
+                        } as Node;
+                    }
+
+                    const master = masterMap.get(ln.story_id);
+                    const masterData = master || {};
+
+                    // Consistent defaults for migrated data
+                    const getMigratedDimensions = (type: string) => {
+                        if (type === 'main') return { w: 260, h: 380 };
+                        if (type === 'theme' || type === 'theme_x') return { w: 320, h: 200 };
+                        return { w: 300, h: 200 };
+                    };
+
+                    const { w: defW, h: defH } = getMigratedDimensions(masterData.type || 'main');
+
+                    // Robust fallback: If width/height is missing OR too small (e.g. 0 from bad migration), use default
+                    // SPECIAL FIX: Season 2 Main nodes appearing as wide (Theme-like) -> Force to Portrait
+                    let finalW = (typeof ln.w === 'number' && ln.w > 50) ? ln.w : defW;
+                    let finalH = (typeof ln.h === 'number' && ln.h > 50) ? ln.h : defH;
+
+                    // Note: season var might not be available here directly if it's propped differently, 
+                    // but MobileCanvas props usually have season or we check masterData.story_id range or similar if strictly needed.
+                    // However, MobileCanvas usually renders one season at a time.
+                    // Checking context: MobileCanvas receives 'season' as prop? No, it has its own state. 
+                    // Let's check state 'season' usage in MobileCanvas. Assuming 'season' state variable exists in scope.
+                    if (season === 2 && (masterData.type === 'main' || !masterData.type)) {
+                        if (finalW > finalH) {
+                            finalW = 260;
+                            finalH = 380;
+                        }
+                    }
+
+                    return {
+                        id: ln.id,
+                        position: { x: ln.x || 0, y: ln.y || 0 },
+                        width: finalW,
+                        height: finalH,
+                        style: { width: finalW, height: finalH },
+                        data: {
+                            ...masterData,
+                            youtubeUrl: masterData.youtube_url,
+                            fullVideoUrl: masterData.full_video_url,
+                            partLabel: masterData.part_label,
+                            story_id: ln.story_id,
+                            m_x: ln.m_x,
+                            m_y: ln.m_y,
+                            watched: !!hist[ln.story_id || ln.id],
+                            image: imageUrl(masterData.image)
+                        }
+                    } as Node;
+                });
+
+                setNodes(processedNodes);
+                setEdges(layout.edges || []);
+                setIsLoaded(true);
             } catch (err) {
                 console.error("Mobile load error:", err);
             } finally {
@@ -246,15 +211,9 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     // Load Update Log
     useEffect(() => {
         const fetchUpdateLog = async () => {
-            if (!supabase) return;
             try {
-                const { data, error } = await supabase
-                    .from('app_updates')
-                    .select('*')
-                    .eq('id', 1)
-                    .single();
-
-                if (data && !error) {
+                const [data] = await api.fetchUpdates();
+                if (data) {
                     setUpdateLogContent(data.content);
                     setLastUpdateAt(data.updated_at);
 
@@ -564,7 +523,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             data: {
                 label: m.label,
                 type: m.type,
-                image: getProxyUrl(m.image),
+                image: imageUrl(m.image),
                 youtubeUrl: m.youtube_url,
                 fullVideoUrl: m.full_video_url,
                 protagonist: m.protagonist,

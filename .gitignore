@@ -1,5 +1,5 @@
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.js
 
@@ -37,3 +37,15 @@ next-env.d.ts
 
 # utility scripts
 /scripts/
+
+# local dumps / secrets
+/.backup/
+
+# worker local secrets
+worker/.dev.vars
+
+# wrangler local state
+.wrangler/
+
+# D1 스키마는 추적한다 (위 *.sql 규칙의 예외)
+!data/schema.sql

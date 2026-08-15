@@ -1,0 +1,15 @@
+name = "trickcal-story-guide"
+main = "src/index.ts"
+compatibility_date = "2026-01-15"
+
+# 버전마다 생기는 공개 미리보기 주소를 끈다. 관리자 API가 붙어 있어 표면을 줄이는 편이 낫다.
+preview_urls = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trickcal"
+database_id = "d7cdf33a-0d1e-4433-a73c-605530ccca97"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "trickcal-images"
