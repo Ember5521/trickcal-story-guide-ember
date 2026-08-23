@@ -1339,32 +1339,33 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
                         {/* 감사 링크 (고정 푸터). 스크롤 없이 바로 보여야 해서 본문 밖에 둔다.
                             내용이 겹치던 'Special Thanks to' 문단은 여기로 합쳤다.
-                            좁은 화면이라 두 줄로 쌓는다 - 가로 2단이면 글자가 잘린다. */}
+                            좌우 2단이라 칸당 폭이 ~110px 뿐이다. 아이콘을 글자 옆이 아니라
+                            위에 두어야 이름이 안 잘린다. */}
                         <div className="shrink-0 border-t border-slate-800 bg-slate-950/50 px-5 py-4">
                             <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2">Special Thanks</p>
-                            <div className="flex flex-col gap-2">
+                            <div className="grid grid-cols-2 gap-2">
                                 <a
                                     href="https://docs.google.com/spreadsheets/d/1xhTjImr4F4adLUUe6ifKkVrnLowTxKEDuTpV1GQonc8/edit?gid=0#gid=0"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:bg-emerald-500/20 transition-all"
+                                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:bg-emerald-500/20 transition-all"
                                 >
                                     <FileSpreadsheet size={22} className="text-emerald-400 shrink-0" />
-                                    <span className="min-w-0 flex-1">
-                                        <span className="block text-[11px] font-black text-emerald-300 truncate">&apos;망고&apos;님 스프레드시트</span>
-                                        <span className="block text-[9px] text-emerald-400/60 truncate">출시 순서 정리</span>
+                                    <span className="text-center leading-tight">
+                                        <span className="block text-[10px] font-black text-emerald-300">&apos;망고&apos;님<br />스프레드시트</span>
+                                        <span className="block text-[9px] text-emerald-400/60 mt-0.5">출시 순서 정리</span>
                                     </span>
                                 </a>
                                 <a
                                     href="https://www.youtube.com/@aerangsu"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 active:bg-rose-500/20 transition-all"
+                                    className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl bg-rose-500/10 border border-rose-500/30 active:bg-rose-500/20 transition-all"
                                 >
                                     <Youtube size={22} className="text-rose-400 shrink-0" />
-                                    <span className="min-w-0 flex-1">
-                                        <span className="block text-[11px] font-black text-rose-300 truncate">&apos;애랑수&apos;님 유튜브</span>
-                                        <span className="block text-[9px] text-rose-400/60 truncate">스토리 녹화본</span>
+                                    <span className="text-center leading-tight">
+                                        <span className="block text-[10px] font-black text-rose-300">&apos;애랑수&apos;님<br />유튜브</span>
+                                        <span className="block text-[9px] text-rose-400/60 mt-0.5">스토리 녹화본</span>
                                     </span>
                                 </a>
                             </div>
