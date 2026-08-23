@@ -31,6 +31,7 @@ node scripts/verify-d1.mjs [--remote]                 # D1 내용을 data/backup
 node scripts/smoke-worker.mjs [BASE_URL] [PASSWORD]   # Worker 엔드포인트 전수 점검
 node scripts/test-undo.mjs                            # src/lib/undo.mjs
 node scripts/test-curation.mjs                        # src/lib/curation.mjs
+node scripts/verify-layouts.mjs [--local]             # 레이아웃 파손(좌표 이탈/앵커 누락) 점검
 ```
 
 There is no test framework; the scripts above are the checks. `scripts/` 는 `.gitignore` 에 걸려 있어 리포에 없다 — 이 컴퓨터에만 있다.
@@ -95,6 +96,8 @@ D1 (SQLite). 스키마는 `data/schema.sql`, 원본 백업은 `data/backup/*.jso
 - **`story_layouts`** — `(view_type, season)` 당 한 행. `nodes`/`edges` 는 JSON 문자열(TEXT). 레이아웃 노드는 `id`, `story_id`, `x/y/w/h`, 모바일 전용 좌표 `m_x`/`m_y`, `splitType` 만 담는다.
 - **`app_updates`** — 앱 내 알림 벨에 뜨는 변경 로그. 한 행(`id = 1`).
 - **`login_attempts`** — IP 별 로그인 실패 카운터.
+
+**모바일은 PC 좌표(`x`/`y`)를 절대 쓰지 않는다.** 모바일 편집 폼의 Column Placement 와 Grid Y 는 모바일 격자 값이라 `m_x`/`m_y` 로만 가야 한다. 예전에는 이 값을 그대로 `position` 에 넣어서, 모바일에서 위치를 건드릴 때마다 PC 좌표가 덮였다. 모바일에서 만든 노드가 `x = 0` 으로 저장돼 `release/3` 이 통째로 빈 화면이 된 적이 있다 — PC 는 `translateExtent` 를 최소/최대 좌표로 잡기 때문에 노드 하나가 수만 px 떨어져 있으면 지도가 빈 곳을 비춘다. `scripts/verify-layouts.mjs` 가 이걸 잡는다.
 
 `view_type` 은 `recommended | release | elflix`, `season` 은 1~3. (`chrono` 뷰와 season 101 은 UI 에서 선택 불가능한 죽은 데이터여서 이관 때 버렸다.)
 

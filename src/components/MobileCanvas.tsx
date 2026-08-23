@@ -568,12 +568,31 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         }
     };
 
+    // 모바일은 PC 좌표(position.x/y)를 편집하지 않는다. 폼의 Column Placement 와
+    // Grid Y 는 모바일 격자 값이므로 m_x/m_y 에만 쓴다. 예전에는 이 값을 그대로
+    // position 에 넣어서, 모바일에서 위치를 건드릴 때마다 PC 좌표가 덮여 사라졌다.
+    const nextMobileSlot = () => {
+        const ys = nodes.map(n => n.data.m_y ?? n.position.y);
+        return { m_x: 0, m_y: (ys.length ? Math.max(...ys) : 0) + SLOT_UNIT };
+    };
+
+    // 새 노드에는 PC 좌표가 없다. 0 으로 두면 PC 화면에서 나머지 노드로부터 수만 px
+    // 떨어진 허공에 놓이고, translateExtent 가 그만큼 벌어져 지도가 빈 곳을 비춘다.
+    // (release/3 에서 실제로 이 일이 났다.) 기존 노드 오른쪽 끝에 붙여 둔다.
+    const nextPcPosition = () => {
+        const xs = nodes
+            .filter(n => n.data.type !== 'annotation')
+            .map(n => n.position.x + ((n as any).width || 400));
+        return { x: xs.length ? Math.max(...xs) + 60 : 0, y: -140 };
+    };
+
     const handleImportMaster = (m: any) => {
-        const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.position.y)) : 0;
+        const slot = nextMobileSlot();
         const newNode: Node = {
             id: `n_${Date.now()}`,
-            position: { x: 0, y: maxY + SLOT_UNIT },
+            position: nextPcPosition(),
             data: {
+                ...slot,
                 label: m.label,
                 type: m.type,
                 image: m.image,
@@ -775,9 +794,9 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     </button>
                                     <button
                                         onClick={() => {
-                                            const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.position.y)) : 0;
+                                            const slot = nextMobileSlot();
                                             setEditingNode(null);
-                                            setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: 0, y: maxY + SLOT_UNIT, partLabel: '', importance: 0 });
+                                            setFormData({ label: '', type: 'main', image: '', youtubeUrl: '', protagonist: '', x: slot.m_x, y: slot.m_y, partLabel: '', importance: 0 });
                                             setShowForm(true);
                                         }}
                                         className="p-1.5 bg-slate-800 rounded-lg text-green-400 border border-slate-700"
@@ -1035,7 +1054,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             setEditingNode(node);
-                                                            setFormData({ ...node.data, x: node.position.x, y: node.position.y });
+                                                            setFormData({ ...node.data, x: node.data.m_x ?? node.position.x, y: node.data.m_y ?? node.position.y });
                                                             setShowForm(true);
                                                         }}
                                                         className="p-1.5 text-blue-400/80 hover:text-blue-400 bg-slate-800/50 rounded pointer-events-auto active:scale-125 transition-transform"
@@ -1196,12 +1215,15 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
                                     let newNodes: Node[];
                                     if (editingNode) {
-                                        newNodes = nodes.map(n => n.id === editingNode.id ? { ...n, position: { x: formData.x, y: formData.y }, data: { ...n.data, ...formData, story_id: storyId } } : n);
+                                        // position(PC 좌표)은 그대로 둔다. 폼의 x/y 는 모바일 격자 값이다.
+                                        newNodes = nodes.map(n => n.id === editingNode.id
+                                            ? { ...n, data: { ...n.data, ...formData, m_x: formData.x, m_y: formData.y, story_id: storyId } }
+                                            : n);
                                     } else {
                                         const newNode: Node = {
                                             id: `n_${Date.now()}`,
-                                            position: { x: formData.x, y: formData.y },
-                                            data: { ...formData, story_id: storyId, watched: false }
+                                            position: nextPcPosition(),
+                                            data: { ...formData, m_x: formData.x, m_y: formData.y, story_id: storyId, watched: false }
                                         };
                                         newNodes = [...nodes, newNode];
                                     }
