@@ -134,10 +134,12 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             width: ln.w || 96,
                             height: ln.h || 96,
                             data: {
-                                label: ln.content || 'Curation Note',
+                                // label 은 라이브러리용 짧은 이름, content 가 본문.
+                                // 본문의 정본은 master 이고 ln.content 는 이관 전 폴백이다.
+                                label: masterMap.get(ln.story_id)?.label || '큐레이션',
                                 type: 'annotation',
                                 story_id: ln.story_id,
-                                content: ln.content,
+                                content: masterMap.get(ln.story_id)?.content || ln.content,
                                 image: '',
                                 youtubeUrl: '',
                                 importance: 0
@@ -560,7 +562,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 partLabel: m.part_label,
                 importance: m.importance,
                 splitType: m.split_type || 'none',
-                content: m.type === 'annotation' ? m.label : '',
+                content: m.content || '',
                 story_id: m.id,
                 watched: false
             }
@@ -1147,6 +1149,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         importance: formData.importance || 0,
                                         split_type: formData.splitType || 'none',
                                         full_video_url: formData.fullVideoUrl || '',
+                                        content: formData.content || '',
                                     });
                                     storyId = saved.id;
 

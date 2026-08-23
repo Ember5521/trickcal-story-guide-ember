@@ -1043,7 +1043,12 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             data: {
                                 type: 'annotation',
                                 story_id: ln.story_id,
-                                content: ln.content,
+                                // 라이브러리에서 고르기 위한 짧은 이름. 편집 폼이 이 값을
+                                // 되쓰므로 비워두면 저장할 때 이름이 지워진다.
+                                label: masterMap.get(ln.story_id)?.label || '',
+                                // 본문은 master 가 정본. 아직 옮겨지지 않은 레이아웃을 위해
+                                // 예전 위치(ln.content)로 폴백한다.
+                                content: masterMap.get(ln.story_id)?.content || ln.content,
                                 isAdmin,
                                 onDelete: handleDeleteAnnotation,
                                 onUpdate: handleUpdateAnnotation
@@ -1466,6 +1471,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 importance: formData.importance || 0,
                 split_type: formData.splitType || 'none',
                 full_video_url: formData.fullVideoUrl || '',
+                content: formData.content || '',   // 큐레이션 본문의 정본은 master 쪽이다
             });
             storyId = saved.id;
 
@@ -1627,7 +1633,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 watched: false,
                 isAdmin,
                 splitType: m.split_type || 'none',
-                content: m.type === 'annotation' ? m.label : '',
+                content: m.content || '',
                 onDelete: handleDeleteAnnotation,
                 onUpdate: handleUpdateAnnotation,
                 onPlayVideo: (url: string) => {

@@ -239,12 +239,15 @@ async function saveStory(req: Request, env: Env, origin: string | null): Promise
         part_label: b.part_label ?? '',
         split_type: b.split_type ?? 'none',
         importance: Number(b.importance) || 0,
+        content: b.content ?? '',
     };
+    // 아래 두 쿼리는 Object.values(fields) 를 위치 인자로 넘긴다.
+    // fields 에 키를 추가하면 두 SQL 의 컬럼 순서도 같이 고쳐야 한다.
 
     if (b.id) {
         await env.DB.prepare(
             'UPDATE master_stories SET label=?, type=?, image=?, youtube_url=?, full_video_url=?,'
-            + ' protagonist=?, part_label=?, split_type=?, importance=?, updated_at=? WHERE id=?',
+            + ' protagonist=?, part_label=?, split_type=?, importance=?, content=?, updated_at=? WHERE id=?',
         ).bind(...Object.values(fields), now, b.id).run();
         return json({ id: b.id }, {}, origin);
     }
@@ -252,8 +255,8 @@ async function saveStory(req: Request, env: Env, origin: string | null): Promise
     const id = crypto.randomUUID();
     await env.DB.prepare(
         'INSERT INTO master_stories (id, label, type, image, youtube_url, full_video_url,'
-        + ' protagonist, part_label, split_type, importance, created_at, updated_at)'
-        + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        + ' protagonist, part_label, split_type, importance, content, created_at, updated_at)'
+        + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).bind(id, ...Object.values(fields), now, now).run();
     return json({ id }, {}, origin);
 }
