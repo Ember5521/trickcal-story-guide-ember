@@ -1236,22 +1236,25 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
             {showInfo && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-                    <div className="bg-slate-900/95 border border-slate-700/50 rounded-2xl p-6 max-w-sm w-full relative backdrop-blur-xl shadow-2xl max-h-[85vh] overflow-y-auto custom-scrollbar">
-                        <button onClick={() => { setShowInfo(false); localStorage.setItem('intro_completed', 'true'); }} className="absolute top-4 right-4 text-slate-500">
-                            <X size={20} />
-                        </button>
-
-                        <div className="flex items-center gap-2 mb-2">
-                            <button
-                                className="p-2 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 cursor-default"
-                            >
+                    <div className="bg-slate-900/95 border border-slate-700/50 rounded-2xl max-w-sm w-full relative backdrop-blur-xl shadow-2xl max-h-[85vh] flex flex-col overflow-hidden">
+                        {/* 헤더 (고정) */}
+                        <div className="flex items-center gap-2 px-5 pt-5 pb-3 border-b border-slate-800 shrink-0">
+                            <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-400 shrink-0">
                                 <Info size={16} />
-                            </button>
-                            <h2 className="text-lg font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                            </div>
+                            <h2 className="text-[15px] font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent leading-tight">
                                 트릭컬 스토리 가이드맵 - Ember
                             </h2>
+                            <button
+                                onClick={() => { setShowInfo(false); localStorage.setItem('intro_completed', 'true'); }}
+                                className="ml-auto shrink-0 text-slate-500 p-1 active:scale-90 transition-transform"
+                            >
+                                <X size={20} />
+                            </button>
                         </div>
-                        <p className="text-[10px] text-slate-500 mb-4"></p>
+
+                        {/* 본문 (스크롤) */}
+                        <div className="flex-1 overflow-y-auto px-5 py-4 custom-scrollbar">
 
                         {/* Order Selection Buttons */}
                         <div className="grid grid-cols-1 gap-2 mb-4">
@@ -1332,34 +1335,39 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 • 본 사이트는 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                             </p>
                         </div>
-                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50 mt-2">
-                            <p className="text-[10px] leading-relaxed text-slate-400">
-                                <b className="text-slate-300">Special Thanks to</b><br />
-                                • 교주 &apos;망고&apos; 님: 출시 순서 구글 스프레드 시트 공유 허락에 감사드립니다.<br />
-                                • 유튜버 &apos;애랑수&apos; 님: 스토리 녹화본 공유 허락에 감사드립니다.
-                            </p>
                         </div>
 
-                        {/* External Link Buttons */}
-                        <div className="grid grid-cols-2 gap-2 mt-3">
-                            <a
-                                href="https://docs.google.com/spreadsheets/d/1xhTjImr4F4adLUUe6ifKkVrnLowTxKEDuTpV1GQonc8/edit?gid=0#gid=0"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:bg-emerald-500/20 transition-all"
-                            >
-                                <FileSpreadsheet size={24} className="text-emerald-400" />
-                                <span className="text-[9px] font-bold text-emerald-300 text-center leading-tight">&apos;망고&apos;님의<br />스프레드 시트</span>
-                            </a>
-                            <a
-                                href="https://www.youtube.com/@aerangsu"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 active:bg-rose-500/20 transition-all"
-                            >
-                                <Youtube size={24} className="text-rose-400" />
-                                <span className="text-[9px] font-bold text-rose-300 text-center leading-tight">&apos;애랑수&apos;님의<br />유튜브 링크</span>
-                            </a>
+                        {/* 감사 링크 (고정 푸터). 스크롤 없이 바로 보여야 해서 본문 밖에 둔다.
+                            내용이 겹치던 'Special Thanks to' 문단은 여기로 합쳤다.
+                            좁은 화면이라 두 줄로 쌓는다 - 가로 2단이면 글자가 잘린다. */}
+                        <div className="shrink-0 border-t border-slate-800 bg-slate-950/50 px-5 py-4">
+                            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-slate-500 mb-2">Special Thanks</p>
+                            <div className="flex flex-col gap-2">
+                                <a
+                                    href="https://docs.google.com/spreadsheets/d/1xhTjImr4F4adLUUe6ifKkVrnLowTxKEDuTpV1GQonc8/edit?gid=0#gid=0"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:bg-emerald-500/20 transition-all"
+                                >
+                                    <FileSpreadsheet size={22} className="text-emerald-400 shrink-0" />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block text-[11px] font-black text-emerald-300 truncate">&apos;망고&apos;님 스프레드시트</span>
+                                        <span className="block text-[9px] text-emerald-400/60 truncate">출시 순서 정리</span>
+                                    </span>
+                                </a>
+                                <a
+                                    href="https://www.youtube.com/@aerangsu"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 active:bg-rose-500/20 transition-all"
+                                >
+                                    <Youtube size={22} className="text-rose-400 shrink-0" />
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block text-[11px] font-black text-rose-300 truncate">&apos;애랑수&apos;님 유튜브</span>
+                                        <span className="block text-[9px] text-rose-400/60 truncate">스토리 녹화본</span>
+                                    </span>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
