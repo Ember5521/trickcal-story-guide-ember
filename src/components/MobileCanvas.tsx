@@ -136,6 +136,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             data: {
                                 label: ln.content || 'Curation Note',
                                 type: 'annotation',
+                                story_id: ln.story_id,
                                 content: ln.content,
                                 image: '',
                                 youtubeUrl: '',
@@ -185,6 +186,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             fullVideoUrl: masterData.full_video_url,
                             partLabel: masterData.part_label,
                             story_id: ln.story_id,
+                            splitType: ln.splitType,
                             m_x: ln.m_x,
                             m_y: ln.m_y,
                             watched: !!hist[ln.story_id || ln.id],
@@ -298,10 +300,12 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 };
 
                 if (n.data.type === 'annotation') {
-                    return { ...base, content: n.data.content };
+                    return { ...base, story_id: (n.data as any).story_id, content: n.data.content };
                 }
 
-                return { ...base, story_id: (n.data as any).story_id || n.id };
+                // splitType은 PC에서만 편집하지만 저장은 양쪽이 한다. 여기서 빠뜨리면
+                // 모바일 관리자가 한 번 저장하는 순간 전 노드의 분할 설정이 지워진다.
+                return { ...base, story_id: (n.data as any).story_id || n.id, splitType: n.data.splitType };
             });
 
             await api.saveLayout(viewType, season, layoutNodes, edges);

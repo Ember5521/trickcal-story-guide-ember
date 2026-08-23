@@ -903,6 +903,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 if (node.type === 'annotationNode') {
                     return {
                         ...base,
+                        // 큐레이션도 master_stories 행을 가진다. 여기서 story_id를 빠뜨리면
+                        // 라이브러리에서 불러온 노드가 저장 즉시 master와 끊긴다.
+                        story_id: (node.data as any).story_id,
                         content: node.data.content
                     };
                 }
@@ -1039,6 +1042,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             position: { x: ln.x || 0, y: ln.y || 0 },
                             data: {
                                 type: 'annotation',
+                                story_id: ln.story_id,
                                 content: ln.content,
                                 isAdmin,
                                 onDelete: handleDeleteAnnotation,
