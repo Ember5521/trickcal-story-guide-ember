@@ -6,15 +6,49 @@ import { Handle, Position, NodeProps } from 'reactflow';
 import { StoryNodeData } from './StoryNode';
 
 /**
+ * 큐레이션 본문. 안에 섞인 URL 만 링크로 만든다.
+ * PC 노드 툴팁과 모바일 노트 시트가 같은 렌더링을 써야 해서 밖으로 뺐다.
+ */
+export const CurationText = ({ content }: { content?: string }) => {
+    const text = content || '배치 의도가 기록되지 않았습니다.';
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+    return (
+        <>
+            {text.split(urlRegex).map((part, i) =>
+                part.match(urlRegex) ? (
+                    <a
+                        key={i}
+                        href={part}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-400 hover:text-indigo-300 underline underline-offset-4 decoration-2 decoration-indigo-500/50 transition-all cursor-pointer inline-block break-all"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {part}
+                    </a>
+                ) : part,
+            )}
+        </>
+    );
+};
+
+/**
  * CurationNode component for displaying professional guidance notes on the map.
  * Replaces the old AnnotationNode.
  */
 const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
     const [showTooltip, setShowTooltip] = useState(false);
 
+    // 관리자는 핸들을 봐야 앵커를 끌어 연결할 수 있다. 방문자에게는 숨긴다.
+    // source(아래) = "이 노드 보기 전", target(위) = "본 후" — 방향이 곧 의미다.
+    const handleClass = data.isAdmin
+        ? '!w-3 !h-3 !bg-amber-400 !border-2 !border-slate-900 !opacity-100'
+        : 'opacity-0';
+
     return (
         <div className="relative group">
-            <Handle type="target" position={Position.Top} className="opacity-0" />
+            <Handle type="target" position={Position.Top} className={handleClass} />
 
             {/* Curation Icon (Large & Glowing) */}
             <div
@@ -29,6 +63,7 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
                 className={`
                     w-24 h-24 flex items-center justify-center rounded-full cursor-pointer transition-all duration-500
                     ${selected ? 'ring-4 ring-amber-400 scale-110 shadow-[0_0_60px_rgba(245,158,11,0.9)]' : 'hover:scale-110 shadow-[0_0_40px_rgba(245,158,11,0.6)]'}
+                    ${data.isAdmin && data.unanchored ? 'ring-4 ring-rose-500 ring-dashed' : ''}
                     bg-amber-500/20 border-2 border-amber-500 backdrop-blur-md
                     text-amber-400 relative overflow-visible
                 `}
@@ -55,29 +90,7 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
                         className="text-[26px] text-slate-100 leading-[1.5] font-black italic opacity-100 drop-shadow-lg cursor-text break-words whitespace-pre-wrap select-text"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {(() => {
-                            const content = data.content || '배치 의도가 기록되지 않았습니다.';
-                            const urlRegex = /(https?:\/\/[^\s]+)/g;
-                            const parts = content.split(urlRegex);
-
-                            return parts.map((part, i) => {
-                                if (part.match(urlRegex)) {
-                                    return (
-                                        <a
-                                            key={i}
-                                            href={part}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-indigo-400 hover:text-indigo-300 underline underline-offset-4 decoration-2 decoration-indigo-500/50 transition-all cursor-pointer inline-block break-all"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            {part}
-                                        </a>
-                                    );
-                                }
-                                return part;
-                            });
-                        })()}
+                        <CurationText content={data.content} />
                     </div>
                     <div
                         className="mt-8 text-[12px] text-center text-amber-500/40 font-black uppercase tracking-[0.4em] border-t border-white/10 pt-6 hover:text-amber-500 transition-colors"
@@ -89,7 +102,7 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
                 </div>
             )}
 
-            <Handle type="source" position={Position.Bottom} className="opacity-0" />
+            <Handle type="source" position={Position.Bottom} className={handleClass} />
         </div>
     );
 };

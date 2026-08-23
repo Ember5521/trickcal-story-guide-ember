@@ -25,6 +25,7 @@ export interface StoryNodeData {
     m_x?: number;
     m_y?: number;
     content?: string; // For annotations
+    unanchored?: boolean; // For annotations: 붙일 노드가 아직 정해지지 않음 (관리자에게만 표시)
     onDelete?: (id: string) => void; // For annotations
     onUpdate?: (id: string, content: string) => void; // For annotations
 }

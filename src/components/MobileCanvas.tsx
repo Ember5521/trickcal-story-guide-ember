@@ -9,7 +9,9 @@ import {
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
 import { canUndo, createUndoStack, layoutSignature, record, undo as popUndo } from '../lib/undo.mjs';
+import { resolveAnchor } from '../lib/curation.mjs';
 import YouTubeEmbed from './YouTubeEmbed';
+import { CurationText } from './CurationNode';
 
 const isProd = process.env.NODE_ENV === 'production';
 const repoName = 'trickcal-story-guide-ember';
@@ -66,6 +68,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [isLoading, setIsLoading] = useState(true);
     const [isAdmin, setIsAdmin] = useState(false);
     const [selectedDetailNode, setSelectedDetailNode] = useState<Node | null>(null);
+    const [noteNode, setNoteNode] = useState<Node | null>(null);   // 큐레이션 노트 시트
     const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
     const [activeVideoDetails, setActiveVideoDetails] = useState<{ id: string, startTime: number, endTime: number } | null>(null);
     const [searchIndex, setSearchIndex] = useState(0);
@@ -262,23 +265,25 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 setShowInfo(false);
             } else if (showMemo) {
                 setShowMemo(false);
+            } else if (noteNode) {
+                setNoteNode(null);
             }
         };
 
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
-    }, [activeVideoUrl, selectedDetailNode, showInfo, showMemo]);
+    }, [activeVideoUrl, selectedDetailNode, showInfo, showMemo, noteNode]);
 
     // Push states to history to enable back button closing
     useEffect(() => {
         // If any modal becomes open, push a state
-        const anyOpen = !!selectedDetailNode || !!activeVideoUrl || showInfo || showMemo;
+        const anyOpen = !!selectedDetailNode || !!activeVideoUrl || showInfo || showMemo || !!noteNode;
         if (anyOpen) {
             // Check if we already pushed for this state to avoid loops
             // Using a simple state check
             window.history.pushState({ modal: true }, '');
         }
-    }, [!!selectedDetailNode, !!activeVideoUrl, showInfo, showMemo]);
+    }, [!!selectedDetailNode, !!activeVideoUrl, showInfo, showMemo, !!noteNode]);
 
     // Save Memo
     useEffect(() => {
@@ -418,13 +423,14 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const ROW_HEIGHT = 70;
     const ROW_GAP = 6;
     const SLOT_UNIT = 80; // Slightly tighter slot unit
+    const CURATION_BAR_H = 20;
 
     // Layout Logic (Slot-based Engine)
     const layoutInfo = useMemo(() => {
         // Render non-annotation nodes only
         const nodesToLayout = nodes.filter(n => n.data.type !== 'annotation');
 
-        if (nodesToLayout.length === 0) return { nodes: [], totalHeight: 1000, maxRow: 10 };
+        if (nodesToLayout.length === 0) return { nodes: [], curations: [], totalHeight: 1000, maxRow: 10 };
 
         // 1. Static Grid Mapping
         const slottedNodes = nodesToLayout.map(node => {
@@ -445,12 +451,35 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
         const maxRow = slottedNodes.length > 0 ? Math.max(...slottedNodes.map(n => n.rowIndex)) : 0;
 
+        // 큐레이션은 격자에 슬롯을 차지하지 않는다. PC 는 좌표로 옆에 놓지만 모바일은
+        // 자동 배치라 그 근접성이 사라진다. 그래서 엣지로 지정된 노드의 경계에 띠로 붙인다.
+        // 엣지 방향이 곧 앞/뒤다:
+        //   큐레이션 -> 노드 : 그 노드를 보기 전에 읽을 것 (위에 붙음)
+        //   노드 -> 큐레이션 : 본 뒤에 읽을 것            (아래에 붙음)
+        // 앵커가 없는 큐레이션은 뜰 자리가 없어 건너뛴다. PC 관리자 화면에서 붉게 표시된다.
+        const byId = new Map(slottedNodes.map(n => [n.id, n]));
+        const curations = nodes
+            .filter(n => n.data.type === 'annotation')
+            .flatMap(n => {
+                const hit = resolveAnchor(n.id, edges, (id: string) => byId.has(id));
+                if (!hit) return [];
+                const anchor = byId.get(hit.anchorId)!;
+                return [{
+                    node: n,
+                    side: hit.side as 'before' | 'after',
+                    renderTop: hit.side === 'before'
+                        ? anchor.renderTop - CURATION_BAR_H + 4
+                        : anchor.renderTop + ROW_HEIGHT - 4,
+                }];
+            });
+
         return {
             nodes: slottedNodes,
+            curations,
             totalHeight: (maxRow + 10) * (ROW_HEIGHT + ROW_GAP) + 400,
             maxRow
         };
-    }, [nodes]);
+    }, [nodes, edges]);
 
     const matchedNodeIds = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
@@ -909,6 +938,25 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         );
                     })}
 
+                    {layoutInfo.curations.map((c) => (
+                        <div
+                            key={c.node.id}
+                            className="absolute z-20 px-1 touch-pan-y"
+                            style={{ top: `${c.renderTop}px`, left: 0, width: '100%', height: `${CURATION_BAR_H}px` }}
+                            onClick={() => setNoteNode(c.node)}
+                        >
+                            <div className="flex items-center gap-1.5 h-full px-2 rounded-full bg-amber-500/15 border border-amber-500/40 backdrop-blur-sm active:scale-[0.98] transition-transform">
+                                <Lightbulb size={11} className="text-amber-400 shrink-0" />
+                                <span className="text-[9px] text-amber-200/90 font-bold truncate">
+                                    {(c.node.data.content || '').split('\n')[0]}
+                                </span>
+                                <span className="ml-auto text-[8px] text-amber-500/70 font-black tracking-widest shrink-0">
+                                    {c.side === 'before' ? '보기 전' : '본 후'}
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+
                     {layoutInfo.nodes.map((node) => {
                         const { colIndex, renderTop } = node;
                         const isRight = colIndex === 1;
@@ -1325,6 +1373,30 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             )}
 
             {/* Selected Node Detail Modal */}
+            {/* 큐레이션 노트 시트. 상세 모달은 포스터 중심이라 글만 있는 노트에는 맞지 않는다. */}
+            {noteNode && (
+                <div
+                    className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-end"
+                    onClick={() => setNoteNode(null)}
+                >
+                    <div
+                        className="w-full bg-slate-950 border-t-2 border-amber-500/40 rounded-t-3xl p-6 pb-10 max-h-[70vh] overflow-y-auto animate-in slide-in-from-bottom duration-300"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-2 mb-5 pb-4 border-b border-white/10">
+                            <Lightbulb size={16} className="text-amber-400" />
+                            <span className="text-[11px] font-black text-amber-500 uppercase tracking-[0.3em]">Guide Note</span>
+                            <button onClick={() => setNoteNode(null)} className="ml-auto p-1 text-slate-500 active:scale-90">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="text-[15px] text-slate-100 leading-relaxed font-medium whitespace-pre-wrap break-words">
+                            <CurationText content={noteNode.data.content} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {selectedDetailNode && (
                 <div className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-950/10 backdrop-blur-xl animate-in fade-in duration-500 overflow-y-auto pt-10 pb-20">
                     <button

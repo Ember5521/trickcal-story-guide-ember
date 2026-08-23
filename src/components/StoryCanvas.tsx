@@ -363,6 +363,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         const query = searchQuery.toLowerCase();
         const isSearchActive = query.length >= 2;
 
+        // 앵커가 아직 없는 큐레이션은 모바일에서 뜰 자리가 없다. 관리자에게만 표시한다.
+        const anchored = new Set(edges.flatMap(e => [e.source, e.target]));
+
         return nodes.map(node => {
             // PC Version: Hide nodes if importance is below filter level
             // Curation nodes (annotation) are always shown or treated as importance 2
@@ -380,13 +383,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 data: {
                     ...node.data,
                     isAdmin,
+                    unanchored: node.type === 'annotationNode' && !anchored.has(node.id),
                     highlighted: isMatched && !isHidden,
                     isRecentlyNavigated: navHighlightedNodeId === node.id,
                     onPlayVideo: handlePlayVideo
                 }
             };
         });
-    }, [nodes, searchQuery, isAdmin, handlePlayVideo, navHighlightedNodeId, importanceFilter]);
+    }, [nodes, edges, searchQuery, isAdmin, handlePlayVideo, navHighlightedNodeId, importanceFilter]);
 
     const matchedNodeIds = useMemo(() => {
         return displayNodes.filter(node => node.data.highlighted).map(node => node.id);
@@ -580,24 +584,30 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         });
 
         // 3. Construct Final Edge Objects
+        // 큐레이션이 걸린 엣지는 이야기 흐름이 아니라 주석이 붙는 자리를 뜻한다.
+        // 같은 굵기/색으로 그리면 순서선과 섞여 읽히므로 가늘고 옅은 점선으로 구분한다.
+        const curationIds = new Set(displayNodes.filter(n => n.type === 'annotationNode').map(n => n.id));
+
         return rawEdges.map((re, idx) => {
             const { bS, bT } = assignedEdges.get(idx)!;
-            const style: any = { strokeWidth: stdWidth, stroke: activeColor, opacity: 1 };
-            if (re.isVirtual) {
-                style.strokeDasharray = '12,8';
-            }
+            const isCuration = curationIds.has(re.source) || curationIds.has(re.target);
+            const color = isCuration ? '#f59e0b' : activeColor;
+
+            const style: any = { strokeWidth: isCuration ? 2 : stdWidth, stroke: color, opacity: isCuration ? 0.5 : 1 };
+            if (re.isVirtual) style.strokeDasharray = '12,8';
+            else if (isCuration) style.strokeDasharray = '6,6';
 
             return {
                 ...re,
                 sourceHandle: bS,
                 targetHandle: bT,
                 type: 'smoothstep',
-                animated: true,
+                animated: !isCuration,
                 markerEnd: {
                     type: MarkerType.ArrowClosed,
-                    color: activeColor,
-                    width: stdMarkerSize,
-                    height: stdMarkerSize
+                    color,
+                    width: isCuration ? 6 : stdMarkerSize,
+                    height: isCuration ? 6 : stdMarkerSize
                 },
                 style
             };
