@@ -58,6 +58,8 @@ const STANDARD_SIZE: Record<string, { w: number; h: number }> = {
     theme_now: { w: 530, h: 271 },
     eternal: { w: 530, h: 271 },
     frontier: { w: 338, h: 541 },
+    // 원 자체가 96px 이다. 박스를 더 크게 두면 핸들이 원 바깥 허공에 뜬다.
+    annotation: { w: 96, h: 96 },
 };
 
 const defaultNodeSize = (type?: string) => {
@@ -417,6 +419,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const displayEdges = useMemo(() => {
         const visibleNodesArray = displayNodes.filter(n => !n.hidden);
         const visibleNodeIds = new Set(visibleNodesArray.map(n => n.id));
+        const curationIds = new Set(displayNodes.filter(n => n.type === 'annotationNode').map(n => n.id));
+        const isCurationEdge = (e: { source: string; target: string }) =>
+            curationIds.has(e.source) || curationIds.has(e.target);
 
         const filterColors = {
             0: '#cbd5e1', // Match default edge color from onConnect
@@ -564,6 +569,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         assignmentsList.forEach(item => {
             if (edgeAssigned.has(item.edgeIdx)) return;
             const edge = rawEdges[item.edgeIdx];
+            // 큐레이션 엣지는 관리자가 고른 코너 핸들을 그대로 쓴다. 여기서 앵커를
+            // 점유하면 스토리 엣지가 쓸 자리만 뺏는다.
+            if (isCurationEdge(edge)) return;
             if (!getOccupied(edge.source).has(item.sId) && !getOccupied(edge.target).has(item.tId)) {
                 assignedEdges.set(item.edgeIdx, { bS: item.sId, bT: item.tId });
                 getOccupied(edge.source).add(item.sId);
@@ -586,12 +594,12 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         // 3. Construct Final Edge Objects
         // 큐레이션이 걸린 엣지는 이야기 흐름이 아니라 주석이 붙는 자리를 뜻한다.
         // 같은 굵기/색으로 그리면 순서선과 섞여 읽히므로 가늘고 옅은 점선으로 구분한다.
-        const curationIds = new Set(displayNodes.filter(n => n.type === 'annotationNode').map(n => n.id));
-
+        // 색은 붙은 코너를 따라간다 — 좌측(보기 전) 호박, 우측(본 후) 하늘.
         return rawEdges.map((re, idx) => {
             const { bS, bT } = assignedEdges.get(idx)!;
-            const isCuration = curationIds.has(re.source) || curationIds.has(re.target);
-            const color = isCuration ? '#f59e0b' : activeColor;
+            const isCuration = isCurationEdge(re);
+            const anchorHandle = curationIds.has(re.source) ? re.targetHandle : re.sourceHandle;
+            const color = isCuration ? (anchorHandle === 'topRight' ? '#0ea5e9' : '#f59e0b') : activeColor;
 
             const style: any = { strokeWidth: isCuration ? 2 : stdWidth, stroke: color, opacity: isCuration ? 0.5 : 1 };
             if (re.isVirtual) style.strokeDasharray = '12,8';
@@ -599,8 +607,10 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
             return {
                 ...re,
-                sourceHandle: bS,
-                targetHandle: bT,
+                // 큐레이션은 관리자가 고른 코너를 유지한다. 최단거리 재배정에 맡기면
+                // 앞/뒤 의미가 화면에서 멋대로 바뀐다.
+                sourceHandle: isCuration ? re.sourceHandle : bS,
+                targetHandle: isCuration ? re.targetHandle : bT,
                 type: 'smoothstep',
                 animated: !isCuration,
                 markerEnd: {
@@ -1063,9 +1073,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 onDelete: handleDeleteAnnotation,
                                 onUpdate: handleUpdateAnnotation
                             } as StoryNodeData,
-                            width: ln.w || 96,
-                            height: ln.h || 96,
-                            style: { width: ln.w || 96, height: ln.h || 96 }
+                            // 저장된 값을 무시하고 96 으로 고정한다. 예전에 300x200 으로
+                            // 저장된 것들이 있어 원보다 박스가 커지고 핸들이 어긋났다.
+                            width: 96,
+                            height: 96,
+                            style: { width: 96, height: 96 }
                         } as Node<StoryNodeData>;
                     }
 

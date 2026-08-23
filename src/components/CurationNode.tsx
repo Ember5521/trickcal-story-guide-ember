@@ -40,15 +40,15 @@ export const CurationText = ({ content }: { content?: string }) => {
 const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
     const [showTooltip, setShowTooltip] = useState(false);
 
-    // 관리자는 핸들을 봐야 앵커를 끌어 연결할 수 있다. 방문자에게는 숨긴다.
-    // source(아래) = "이 노드 보기 전", target(위) = "본 후" — 방향이 곧 의미다.
+    // 핸들은 하나뿐이다. 앞/뒤 구분은 이쪽이 아니라 스토리 노드의 어느 코너에
+    // 붙였는지로 정해진다 (상단 좌측 = 보기 전, 상단 우측 = 본 후).
+    // 예전에는 위/아래 두 개를 뒀는데 원 바깥에 점 두 개가 뜨기만 했다.
     const handleClass = data.isAdmin
         ? '!w-3 !h-3 !bg-amber-400 !border-2 !border-slate-900 !opacity-100'
-        : 'opacity-0';
+        : 'opacity-0 !pointer-events-none';
 
     return (
-        <div className="relative group">
-            <Handle type="target" position={Position.Top} className={handleClass} />
+        <div className="relative group w-24 h-24">
 
             {/* Curation Icon (Large & Glowing) */}
             <div
@@ -102,7 +102,7 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
                 </div>
             )}
 
-            <Handle type="source" position={Position.Bottom} className={handleClass} />
+            <Handle type="source" position={Position.Bottom} id="anchor" className={handleClass} />
         </div>
     );
 };

@@ -118,6 +118,28 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
         </div>
     );
 
+    // 큐레이션 전용 코너 핸들. 어느 쪽에 붙였는지가 곧 앞/뒤다.
+    //   상단 좌측 = 이 스토리를 보기 전에 읽을 것
+    //   상단 우측 = 본 뒤에 읽을 것
+    // 방향(화살표)으로 구분하면 눈에 안 보인다. 위치는 보인다.
+    const renderCornerHandle = (id: 'topLeft' | 'topRight') => (
+        <div
+            className={`absolute ${isAdmin ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            style={{ top: -12, left: id === 'topLeft' ? -12 : 'auto', right: id === 'topRight' ? -12 : 'auto', zIndex: 1000 }}
+            title={id === 'topLeft' ? '큐레이션: 보기 전' : '큐레이션: 본 후'}
+        >
+            <Handle
+                type="source"
+                position={Position.Top}
+                id={id}
+                style={{
+                    width: 14, height: 14, border: '2px solid white',
+                    background: id === 'topLeft' ? '#f59e0b' : '#0ea5e9',
+                }}
+            />
+        </div>
+    );
+
     const showTitle = false; // Universal title hiding as requested
     const hasContent = (showTitle && data.label) || data.partLabel || data.youtubeUrl || data.fullVideoUrl;
 
@@ -166,6 +188,8 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                 {renderHandles('bottom', Position.Bottom)}
                 {renderHandles('left', Position.Left)}
                 {renderHandles('right', Position.Right)}
+                {renderCornerHandle('topLeft')}
+                {renderCornerHandle('topRight')}
 
                 {/* Image Header wrapper with Split Indicator */}
                 <div className={`relative ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} overflow-hidden ${hasContent ? 'rounded-t-[8px]' : 'rounded-[8px]'} flex-grow flex items-center justify-center min-h-0`}>

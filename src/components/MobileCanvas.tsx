@@ -1501,7 +1501,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         </div>
 
                         <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
-                            {(['main', 'theme', 'etc', 'eternal', 'frontier'] as const).map((cat) => (
+                            {(['main', 'theme', 'etc', 'eternal', 'frontier', 'annotation'] as const).map((cat) => (
                                 <button
                                     key={cat}
                                     onClick={() => setLibraryCategory(cat)}
@@ -1510,7 +1510,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         : 'text-slate-500 hover:text-slate-300'
                                         }`}
                                 >
-                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : cat === 'eternal' ? 'Eternal' : cat === 'frontier' ? 'Frontier' : 'ETC'}
+                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : cat === 'eternal' ? 'Eternal' : cat === 'frontier' ? 'Frontier' : cat === 'annotation' ? '큐레이션' : 'ETC'}
                                 </button>
                             ))}
                         </div>
@@ -1535,7 +1535,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         onClick={() => handleImportMaster(m)}
                                         className="group relative aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden border border-slate-700 active:scale-95 transition-all shadow-lg"
                                     >
-                                        {m.image ? (
+                                        {m.type === 'annotation' ? (
+                                            // 큐레이션은 그림이 없다. 이름만으로는 고를 수 없어 본문 앞머리를 보여준다.
+                                            <div className="w-full h-full flex flex-col gap-1 p-1.5 bg-amber-500/10 border border-amber-500/20">
+                                                <Lightbulb size={14} className="text-amber-400 shrink-0" />
+                                                <p className="text-[6px] leading-tight text-amber-100/70 line-clamp-6 text-left">{m.content}</p>
+                                            </div>
+                                        ) : m.image ? (
                                             <img src={getImageUrl(m.image)} className="w-full h-full object-cover" alt={m.label} loading="lazy" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center bg-slate-700/30">
