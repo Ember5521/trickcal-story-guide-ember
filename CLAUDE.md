@@ -18,7 +18,7 @@ GitHub Pages (앱 셸)  ──►  Worker  ──┬─►  D1  노드 데이터
 ```bash
 npm run dev      # 앱 (localhost:3000)
 npm run build    # 정적 export -> ./out
-npm run lint
+npm run lint    # tsc --noEmit (next lint 는 Next 16 에서 제거됨)
 
 # Worker (worker/ 안에서. wrangler 는 worker 의 devDependency)
 node node_modules/wrangler/bin/wrangler.js dev --local --port 8788
@@ -29,9 +29,11 @@ node node_modules/wrangler/bin/wrangler.js d1 execute trickcal --remote -y --com
 # 검증
 node scripts/verify-d1.mjs [--remote]                 # D1 내용을 data/backup 과 대조
 node scripts/smoke-worker.mjs [BASE_URL] [PASSWORD]   # Worker 엔드포인트 전수 점검
+node scripts/test-undo.mjs                            # src/lib/undo.mjs
+node scripts/test-curation.mjs                        # src/lib/curation.mjs
 ```
 
-There is no test framework; the two scripts above are the checks.
+There is no test framework; the scripts above are the checks. `scripts/` 는 `.gitignore` 에 걸려 있어 리포에 없다 — 이 컴퓨터에만 있다.
 
 **Windows 주의**: Node 20 은 `.cmd` 직접 spawn 을 막는다(EINVAL). 스크립트에서 wrangler 를 부를 때는 `npx`/`npx.cmd` 가 아니라 `node worker/node_modules/wrangler/bin/wrangler.js` 를 쓴다. 또 `--command` 에 SQL 을 넘길 때 `shell: true` 를 주면 공백 단위로 쪼개지므로 쓰지 않는다.
 
@@ -89,7 +91,7 @@ There is no test framework; the two scripts above are the checks.
 
 D1 (SQLite). 스키마는 `data/schema.sql`, 원본 백업은 `data/backup/*.json`.
 
-- **`master_stories`** — 에피소드 자체. `label`, `type`, `image`, `youtube_url`, `full_video_url`, `protagonist`, `part_label`, `split_type`, `importance`. 모든 뷰가 공유한다.
+- **`master_stories`** — 에피소드 자체. `label`, `type`, `image`, `youtube_url`, `full_video_url`, `protagonist`, `part_label`, `split_type`, `importance`, `content`. 모든 뷰가 공유한다.
 - **`story_layouts`** — `(view_type, season)` 당 한 행. `nodes`/`edges` 는 JSON 문자열(TEXT). 레이아웃 노드는 `id`, `story_id`, `x/y/w/h`, 모바일 전용 좌표 `m_x`/`m_y`, `splitType` 만 담는다.
 - **`app_updates`** — 앱 내 알림 벨에 뜨는 변경 로그. 한 행(`id = 1`).
 - **`login_attempts`** — IP 별 로그인 실패 카운터.
@@ -99,6 +101,21 @@ D1 (SQLite). 스키마는 `data/schema.sql`, 원본 백업은 `data/backup/*.jso
 `image` 는 **상대 키**(`nodes/2/1769354330180.webp`)로 저장한다. 절대 URL 을 넣지 않으므로 서빙 호스트를 바꿔도 데이터를 건드릴 필요가 없다. 화면에 쓸 때 `imageUrl()` 로 감싼다.
 
 삭제 엔드포인트는 없다. 노드를 지워도 `master_stories` 행은 남는다.
+
+### 큐레이션 노드
+
+`type = 'annotation'` 인 노드. 지도 위에 뜨는 안내 메모다. 두 가지가 보통 노드와 다르다.
+
+**본문은 `master_stories.content` 에 있다.** `label` 은 마스터 라이브러리에서 고르기 위한 짧은 이름이고 본문이 아니다. 레이아웃 노드의 `content` 필드는 이관 전 데이터를 위한 폴백일 뿐이며 정본이 아니다. 본문을 master 에 두는 이유는 같은 문구가 `(view_type, season)` 9벌로 갈라져 따로 놀던 것을 막기 위해서다. 뷰가 달라도 본문이 같으면 한 master 행을 공유한다.
+
+**붙는 자리는 엣지로 정한다.** 좌표 근접이 아니다. 모바일은 자동 배치라 좌표가 재계산되므로 근접성이 남지 않는다. 방향에 의미가 있다:
+
+```
+큐레이션 -> 노드    그 노드를 보기 전에 읽을 것
+노드 -> 큐레이션    본 뒤에 읽을 것
+```
+
+판정은 `src/lib/curation.mjs` 의 `resolveAnchor` 한 곳에 있다. 앵커가 없는 큐레이션은 모바일에 뜨지 않고, PC 관리자 화면에서 붉은 테두리로 표시된다.
 
 ## 클라이언트
 
