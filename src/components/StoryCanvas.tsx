@@ -10,6 +10,7 @@ import {
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
 import { canUndo, createUndoStack, layoutSignature, record, undo as popUndo } from '../lib/undo.mjs';
+import { resolveAnchor } from '../lib/curation.mjs';
 import CurationNode from '@/components/CurationNode';
 import YouTubeEmbed from './YouTubeEmbed';
 import ReactFlow, {
@@ -365,27 +366,54 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         const query = searchQuery.toLowerCase();
         const isSearchActive = query.length >= 2;
 
-        // 앵커가 아직 없는 큐레이션은 모바일에서 뜰 자리가 없다. 관리자에게만 표시한다.
-        const anchored = new Set(edges.flatMap(e => [e.source, e.target]));
+        const byId = new Map(nodes.map(n => [n.id, n]));
+        const isStory = (id: string) => byId.get(id)?.type === 'storyNode';
 
         return nodes.map(node => {
             // PC Version: Hide nodes if importance is below filter level
             // Curation nodes (annotation) are always shown or treated as importance 2
             const isBelowImportance = node.type !== 'annotationNode' && (node.data.importance || 0) < importanceFilter;
-            const isHidden = isBelowImportance;
+            let isHidden = isBelowImportance;
 
             const isMatched = isSearchActive && node.type === 'storyNode' && (
                 node.data.label?.toLowerCase().includes(query) ||
                 (node.data.protagonist?.toLowerCase().includes(query))
             );
 
+            // 큐레이션은 앵커 카드의 코너에 물린다. 원(96px) 중심을 카드 모서리에
+            // 맞추면 원의 1/4 이 카드 안으로 들어간다. 좌표는 앵커에서 파생되므로
+            // 저장된 x/y 는 무시하고 드래그도 막는다.
+            let position = node.position;
+            let draggable: boolean | undefined = undefined;
+            let side: 'before' | 'after' | undefined = undefined;
+
+            if (node.type === 'annotationNode') {
+                const hit = resolveAnchor(node.id, edges, isStory);
+                const anchor = hit ? byId.get(hit.anchorId) : undefined;
+                if (hit && anchor) {
+                    side = hit.side as 'before' | 'after';
+                    const aw = anchor.width || 300;
+                    position = {
+                        x: side === 'before' ? anchor.position.x - 48 : anchor.position.x + aw - 48,
+                        y: anchor.position.y - 48,
+                    };
+                    draggable = false;
+                    // 앵커가 필터로 사라지면 주석도 같이 사라져야 한다.
+                    isHidden = (anchor.data.importance || 0) < importanceFilter;
+                }
+            }
+
             return {
                 ...node,
+                position,
+                ...(draggable === false ? { draggable: false } : {}),
+                zIndex: node.type === 'annotationNode' && side ? 20 : undefined,
                 hidden: isHidden,
                 data: {
                     ...node.data,
                     isAdmin,
-                    unanchored: node.type === 'annotationNode' && !anchored.has(node.id),
+                    anchorSide: side,
+                    unanchored: node.type === 'annotationNode' && !side,
                     highlighted: isMatched && !isHidden,
                     isRecentlyNavigated: navHighlightedNodeId === node.id,
                     onPlayVideo: handlePlayVideo
@@ -439,9 +467,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
         // Solid Edges
         edges.forEach(e => {
-            if (visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)) {
-                rawEdges.push({ ...e, isVirtual: false });
-            }
+            if (!visibleNodeIds.has(e.source) || !visibleNodeIds.has(e.target)) return;
+            // 큐레이션은 카드 코너에 물려 있어 선을 그릴 필요가 없다. 다만 관리자는
+            // 연결을 지우려면 클릭할 대상이 있어야 하므로 관리자에게만 남긴다.
+            if (isCurationEdge(e) && !isAdmin) return;
+            rawEdges.push({ ...e, isVirtual: false });
         });
 
         // Build reachability map for solid connections
@@ -622,7 +652,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 style
             };
         });
-    }, [edges, displayNodes, importanceFilter]);
+    }, [edges, displayNodes, importanceFilter, isAdmin]);
 
     // Canvas Bounds (Requirement: Restrict movement based on nodes)
     const translateExtent = useMemo(() => {

@@ -47,6 +47,13 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
         ? '!w-3 !h-3 !bg-amber-400 !border-2 !border-slate-900 !opacity-100'
         : 'opacity-0 !pointer-events-none';
 
+    // 앵커에 물린 큐레이션은 카드 모서리에 원의 1/4 이 겹친다. 이때 반투명이면
+    // 카드가 비쳐 보여 지저분하다. 불투명하게 채워야 모서리가 파인 것처럼 읽힌다.
+    const isAnchored = !!data.anchorSide;
+    const tone = data.anchorSide === 'after'
+        ? { solid: 'bg-sky-950 border-sky-400', text: 'text-sky-300' }      // 본 후
+        : { solid: 'bg-amber-950 border-amber-400', text: 'text-amber-300' }; // 보기 전
+
     return (
         <div className="relative group w-24 h-24">
 
@@ -64,14 +71,14 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
                     w-24 h-24 flex items-center justify-center rounded-full cursor-pointer transition-all duration-500
                     ${selected ? 'ring-4 ring-amber-400 scale-110 shadow-[0_0_60px_rgba(245,158,11,0.9)]' : 'hover:scale-110 shadow-[0_0_40px_rgba(245,158,11,0.6)]'}
                     ${data.isAdmin && data.unanchored ? 'ring-4 ring-rose-500 ring-dashed' : ''}
-                    bg-amber-500/20 border-2 border-amber-500 backdrop-blur-md
-                    text-amber-400 relative overflow-visible
+                    ${isAnchored ? tone.solid : 'bg-amber-500/20 border-amber-500 backdrop-blur-md'}
+                    border-2 ${tone.text} relative overflow-visible
                 `}
             >
                 {/* Pulsing Outer Glow */}
-                <div className="absolute inset-0 rounded-full animate-pulse bg-amber-500/20 -z-10 scale-150" />
+                {!isAnchored && <div className="absolute inset-0 rounded-full animate-pulse bg-amber-500/20 -z-10 scale-150" />}
 
-                <Lightbulb size={54} className="drop-shadow-[0_0_15px_rgba(245,158,11,0.6)]" />
+                <Lightbulb size={isAnchored ? 40 : 54} className="drop-shadow-[0_0_15px_rgba(245,158,11,0.6)]" />
             </div>
 
             {/* User Info Modal - Top Right View */}

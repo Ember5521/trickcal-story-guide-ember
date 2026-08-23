@@ -423,14 +423,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const ROW_HEIGHT = 70;
     const ROW_GAP = 6;
     const SLOT_UNIT = 80; // Slightly tighter slot unit
-    const CURATION_BAR_H = 20;
 
     // Layout Logic (Slot-based Engine)
     const layoutInfo = useMemo(() => {
         // Render non-annotation nodes only
         const nodesToLayout = nodes.filter(n => n.data.type !== 'annotation');
 
-        if (nodesToLayout.length === 0) return { nodes: [], curations: [], totalHeight: 1000, maxRow: 10 };
+        if (nodesToLayout.length === 0) return { nodes: [], curationByAnchor: new Map(), totalHeight: 1000, maxRow: 10 };
 
         // 1. Static Grid Mapping
         const slottedNodes = nodesToLayout.map(node => {
@@ -451,31 +450,24 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
         const maxRow = slottedNodes.length > 0 ? Math.max(...slottedNodes.map(n => n.rowIndex)) : 0;
 
-        // 큐레이션은 격자에 슬롯을 차지하지 않는다. PC 는 좌표로 옆에 놓지만 모바일은
-        // 자동 배치라 그 근접성이 사라진다. 그래서 엣지로 지정된 노드의 경계에 띠로 붙인다.
-        // 엣지 방향이 곧 앞/뒤다:
-        //   큐레이션 -> 노드 : 그 노드를 보기 전에 읽을 것 (위에 붙음)
-        //   노드 -> 큐레이션 : 본 뒤에 읽을 것            (아래에 붙음)
+        // 큐레이션은 격자에 슬롯을 차지하지 않는다. PC 는 앵커 카드의 코너에 물리지만
+        // 모바일 카드는 70px 한 줄이라 그럴 자리가 없다. 대신 앵커 카드 우측 상단에
+        // 작은 버튼으로 얹는다. 시청 체크는 우측 중앙이라 세로로 떨어져 있다.
         // 앵커가 없는 큐레이션은 뜰 자리가 없어 건너뛴다. PC 관리자 화면에서 붉게 표시된다.
         const byId = new Map(slottedNodes.map(n => [n.id, n]));
-        const curations = nodes
-            .filter(n => n.data.type === 'annotation')
-            .flatMap(n => {
-                const hit = resolveAnchor(n.id, edges, (id: string) => byId.has(id));
-                if (!hit) return [];
-                const anchor = byId.get(hit.anchorId)!;
-                return [{
-                    node: n,
-                    side: hit.side as 'before' | 'after',
-                    renderTop: hit.side === 'before'
-                        ? anchor.renderTop - CURATION_BAR_H + 4
-                        : anchor.renderTop + ROW_HEIGHT - 4,
-                }];
-            });
+        const curationByAnchor = new Map();
+        for (const n of nodes) {
+            if (n.data.type !== 'annotation') continue;
+            const hit = resolveAnchor(n.id, edges, (id: string) => byId.has(id));
+            if (!hit) continue;
+            const list = curationByAnchor.get(hit.anchorId) || [];
+            list.push({ node: n, side: hit.side as 'before' | 'after' });
+            curationByAnchor.set(hit.anchorId, list);
+        }
 
         return {
             nodes: slottedNodes,
-            curations,
+            curationByAnchor,
             totalHeight: (maxRow + 10) * (ROW_HEIGHT + ROW_GAP) + 400,
             maxRow
         };
@@ -938,25 +930,6 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         );
                     })}
 
-                    {layoutInfo.curations.map((c) => (
-                        <div
-                            key={c.node.id}
-                            className="absolute z-20 px-1 touch-pan-y"
-                            style={{ top: `${c.renderTop}px`, left: 0, width: '100%', height: `${CURATION_BAR_H}px` }}
-                            onClick={() => setNoteNode(c.node)}
-                        >
-                            <div className="flex items-center gap-1.5 h-full px-2 rounded-full bg-amber-500/15 border border-amber-500/40 backdrop-blur-sm active:scale-[0.98] transition-transform">
-                                <Lightbulb size={11} className="text-amber-400 shrink-0" />
-                                <span className="text-[9px] text-amber-200/90 font-bold truncate">
-                                    {(c.node.data.content || '').split('\n')[0]}
-                                </span>
-                                <span className="ml-auto text-[8px] text-amber-500/70 font-black tracking-widest shrink-0">
-                                    {c.side === 'before' ? '보기 전' : '본 후'}
-                                </span>
-                            </div>
-                        </div>
-                    ))}
-
                     {layoutInfo.nodes.map((node) => {
                         const { colIndex, renderTop } = node;
                         const isRight = colIndex === 1;
@@ -993,7 +966,25 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 }}
                             >
                                 <div className={`h-full group relative transition-all ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800 rounded-2xl' : ''} ${navHighlightedNodeId === node.id ? 'ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)] rounded-2xl animate-pulse z-10' : matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] rounded-2xl' : ''}`}>
-                                    <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500 ${node.data.watched ? 'opacity-60 border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'hover:bg-slate-800/60 shadow-lg border-slate-800/40'}`}>
+                                    {/* 큐레이션 버튼. 시청 체크는 우측 '중앙'(카드 높이 70px 기준 y≈43)
+                                    이고 이건 우측 '상단 바깥'(y≈-2)이라 30px 넘게 떨어진다.
+                                    카드 밖으로 빼서 오탭 여지를 더 줄였다. */}
+                                {(layoutInfo.curationByAnchor.get(node.id) || []).map((c: any, i: number) => (
+                                    <button
+                                        key={c.node.id}
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => { e.stopPropagation(); setNoteNode(c.node); }}
+                                        style={{ right: `${2 + i * 24}px` }}
+                                        className={`absolute -top-2 z-30 w-[22px] h-[22px] rounded-full flex items-center justify-center border shadow-lg active:scale-90 transition-transform pointer-events-auto ${c.side === 'after'
+                                            ? 'bg-sky-950 border-sky-400 text-sky-300'
+                                            : 'bg-amber-950 border-amber-400 text-amber-300'}`}
+                                        title={c.side === 'after' ? '본 후 읽을 것' : '보기 전 읽을 것'}
+                                    >
+                                        <Lightbulb size={12} />
+                                    </button>
+                                ))}
+
+                                <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500 ${node.data.watched ? 'opacity-60 border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'hover:bg-slate-800/60 shadow-lg border-slate-800/40'}`}>
                                         <div className="relative h-full aspect-square bg-black/20 shrink-0 flex items-center justify-center p-1 border-r border-slate-800/30">
                                             <img src={getImageUrl(node.data.image)} alt={node.data.label} loading="lazy" className="max-w-full max-h-full object-contain drop-shadow-2xl" />
                                             {node.data.type === 'eternal' && (

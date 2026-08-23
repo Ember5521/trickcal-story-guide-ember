@@ -26,6 +26,7 @@ export interface StoryNodeData {
     m_y?: number;
     content?: string; // For annotations
     unanchored?: boolean; // For annotations: 붙일 노드가 아직 정해지지 않음 (관리자에게만 표시)
+    anchorSide?: 'before' | 'after'; // For annotations: 물린 코너 (좌측=보기 전, 우측=본 후)
     onDelete?: (id: string) => void; // For annotations
     onUpdate?: (id: string, content: string) => void; // For annotations
 }
