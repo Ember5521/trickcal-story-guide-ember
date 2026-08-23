@@ -475,8 +475,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         });
 
         // Build reachability map for solid connections
+        // 큐레이션 엣지는 이야기 흐름이 아니라 주석이 붙는 자리다. 도달성 계산에
+        // 넣으면 A -> 큐레이션 -> B 로 이어진 것처럼 취급돼 없는 순서가 생긴다.
         const solidTargetMap = new Map<string, string[]>();
         rawEdges.forEach(e => {
+            if (isCurationEdge(e)) return;
             if (!solidTargetMap.has(e.source)) solidTargetMap.set(e.source, []);
             solidTargetMap.get(e.source)!.push(e.target);
         });
@@ -498,6 +501,9 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             // Traversal Map for Full Database Edges
             const fullEdgeMap = new Map<string, string[]>();
             edges.forEach(e => {
+                // 여기서 큐레이션 엣지를 빼지 않으면, 방문자 화면에서는 실선을 그리지
+                // 않으므로 "연결이 없다"고 보고 대신 가상 점선을 그려버린다.
+                if (isCurationEdge(e)) return;
                 if (!fullEdgeMap.has(e.source)) fullEdgeMap.set(e.source, []);
                 fullEdgeMap.get(e.source)!.push(e.target);
             });
@@ -533,6 +539,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             };
 
             visibleNodesArray.forEach(sourceNode => {
+                // 큐레이션은 흐름의 시작점이 될 수 없다.
+                if (curationIds.has(sourceNode.id)) return;
                 const allTargets = Array.from(findNextVisible(sourceNode.id));
                 // Refinement: Filter out targets that are reachable from other targets in the same set
                 const immediateTargets = allTargets.filter(t => {
