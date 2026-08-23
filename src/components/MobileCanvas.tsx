@@ -966,24 +966,6 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 }}
                             >
                                 <div className={`h-full group relative transition-all ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800 rounded-2xl' : ''} ${navHighlightedNodeId === node.id ? 'ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)] rounded-2xl animate-pulse z-10' : matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] rounded-2xl' : ''}`}>
-                                    {/* 큐레이션 버튼. 시청 체크는 우측 '중앙'(카드 높이 70px 기준 y≈43)
-                                    이고 이건 우측 '상단 바깥'(y≈-2)이라 30px 넘게 떨어진다.
-                                    카드 밖으로 빼서 오탭 여지를 더 줄였다. */}
-                                {(layoutInfo.curationByAnchor.get(node.id) || []).map((c: any, i: number) => (
-                                    <button
-                                        key={c.node.id}
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onClick={(e) => { e.stopPropagation(); setNoteNode(c.node); }}
-                                        style={{ right: `${2 + i * 24}px` }}
-                                        className={`absolute -top-2 z-30 w-[22px] h-[22px] rounded-full flex items-center justify-center border shadow-lg active:scale-90 transition-transform pointer-events-auto ${c.side === 'after'
-                                            ? 'bg-sky-950 border-sky-400 text-sky-300'
-                                            : 'bg-amber-950 border-amber-400 text-amber-300'}`}
-                                        title={c.side === 'after' ? '본 후 읽을 것' : '보기 전 읽을 것'}
-                                    >
-                                        <Lightbulb size={12} />
-                                    </button>
-                                ))}
-
                                 <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500 ${node.data.watched ? 'opacity-60 border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'hover:bg-slate-800/60 shadow-lg border-slate-800/40'}`}>
                                         <div className="relative h-full aspect-square bg-black/20 shrink-0 flex items-center justify-center p-1 border-r border-slate-800/30">
                                             <img src={getImageUrl(node.data.image)} alt={node.data.label} loading="lazy" className="max-w-full max-h-full object-contain drop-shadow-2xl" />
@@ -1010,47 +992,67 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                                 )}
                                             </div>
 
-                                            {/* Bottom Row: Title | Watch Button */}
-                                            <div className="flex items-center justify-between gap-1">
-                                                <h3 className="font-bold leading-tight text-[11px] text-slate-100 line-clamp-2 flex-1 tracking-tight">
-                                                    {node.data.type === 'main' ? (node.data.partLabel || node.data.label) : node.data.label}
-                                                </h3>
+                                            {/* Bottom Row: Title */}
+                                            <h3 className="font-bold leading-tight text-[11px] text-slate-100 line-clamp-2 tracking-tight">
+                                                {node.data.type === 'main' ? (node.data.partLabel || node.data.label) : node.data.label}
+                                            </h3>
+                                        </div>
 
-                                                <div className="flex items-center gap-1.5 ml-auto">
+                                        {/* 버튼 열. 큐레이션이 위, 시청 체크가 바로 아래로 정렬된다.
+                                            카드 안에 두고 세로로 떨어뜨려 오탭을 막는다. */}
+                                        <div className="flex flex-col items-center justify-center gap-1 pr-1.5 shrink-0">
+                                            {(layoutInfo.curationByAnchor.get(node.id) || []).length > 0 && (
+                                                <div className="flex items-center gap-1">
+                                                    {(layoutInfo.curationByAnchor.get(node.id) || []).map((c: any) => (
+                                                        <button
+                                                            key={c.node.id}
+                                                            onPointerDown={(e) => e.stopPropagation()}
+                                                            onClick={(e) => { e.stopPropagation(); setNoteNode(c.node); }}
+                                                            className={`w-5 h-5 rounded-full flex items-center justify-center border shadow-sm active:scale-90 transition-transform pointer-events-auto ${c.side === 'after'
+                                                                ? 'bg-sky-950 border-sky-400 text-sky-300'
+                                                                : 'bg-amber-950 border-amber-400 text-amber-300'}`}
+                                                            title={c.side === 'after' ? '본 후 읽을 것' : '보기 전 읽을 것'}
+                                                        >
+                                                            <Lightbulb size={11} />
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="flex items-center gap-1.5">
+                                                <button
+                                                    onPointerDown={(e) => e.stopPropagation()}
+                                                    onClick={(e) => toggleWatch(node.id, e)}
+                                                    className={`transition-all pointer-events-auto p-1.5 ${node.data.watched ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(52,211,153,0.5)]' : 'text-slate-600 active:scale-125'}`}
+                                                    title={node.data.watched ? '시청 완료' : '시청 미완료'}
+                                                >
+                                                    <CheckCircle size={18} fill={node.data.watched ? 'currentColor' : 'none'} className={node.data.watched ? 'fill-emerald-400/20' : ''} />
+                                                </button>
+
+                                                {isAdmin && (
                                                     <button
                                                         onPointerDown={(e) => e.stopPropagation()}
-                                                        onClick={(e) => toggleWatch(node.id, e)}
-                                                        className={`transition-all pointer-events-auto p-1.5 ${node.data.watched ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(52,211,153,0.5)]' : 'text-slate-600 active:scale-125'}`}
-                                                        title={node.data.watched ? '시청 완료' : '시청 미완료'}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setEditingNode(node);
+                                                            setFormData({ ...node.data, x: node.position.x, y: node.position.y });
+                                                            setShowForm(true);
+                                                        }}
+                                                        className="p-1.5 text-blue-400/80 hover:text-blue-400 bg-slate-800/50 rounded pointer-events-auto active:scale-125 transition-transform"
                                                     >
-                                                        <CheckCircle size={18} fill={node.data.watched ? 'currentColor' : 'none'} className={node.data.watched ? 'fill-emerald-400/20' : ''} />
+                                                        <Edit2 size={12} />
                                                     </button>
+                                                )}
 
-                                                    {isAdmin && (
-                                                        <button
-                                                            onPointerDown={(e) => e.stopPropagation()}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setEditingNode(node);
-                                                                setFormData({ ...node.data, x: node.position.x, y: node.position.y });
-                                                                setShowForm(true);
-                                                            }}
-                                                            className="p-1.5 text-blue-400/80 hover:text-blue-400 bg-slate-800/50 rounded pointer-events-auto active:scale-125 transition-transform"
-                                                        >
-                                                            <Edit2 size={12} />
-                                                        </button>
-                                                    )}
-
-                                                    {isAdmin && (
-                                                        <button
-                                                            onPointerDown={(e) => e.stopPropagation()}
-                                                            onClick={async (e) => { e.stopPropagation(); if (confirm("삭제할까요?")) { const up = nodes.filter(n => n.id !== node.id); setNodes(up); await syncToCloud(up); } }}
-                                                            className="text-red-400/50 hover:text-red-400 transition-colors pointer-events-auto p-1"
-                                                        >
-                                                            <Trash2 size={12} />
-                                                        </button>
-                                                    )}
-                                                </div>
+                                                {isAdmin && (
+                                                    <button
+                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                        onClick={async (e) => { e.stopPropagation(); if (confirm("삭제할까요?")) { const up = nodes.filter(n => n.id !== node.id); setNodes(up); await syncToCloud(up); } }}
+                                                        className="text-red-400/50 hover:text-red-400 transition-colors pointer-events-auto p-1"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -1367,11 +1369,11 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             {/* 큐레이션 노트 시트. 상세 모달은 포스터 중심이라 글만 있는 노트에는 맞지 않는다. */}
             {noteNode && (
                 <div
-                    className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-end"
+                    className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-5"
                     onClick={() => setNoteNode(null)}
                 >
                     <div
-                        className="w-full bg-slate-950 border-t-2 border-amber-500/40 rounded-t-3xl p-6 pb-10 max-h-[70vh] overflow-y-auto animate-in slide-in-from-bottom duration-300"
+                        className="w-full max-w-md bg-slate-950 border-2 border-amber-500/40 rounded-3xl p-6 max-h-[70vh] overflow-y-auto animate-in zoom-in-95 fade-in duration-200"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center gap-2 mb-5 pb-4 border-b border-white/10">

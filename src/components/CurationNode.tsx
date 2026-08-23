@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { Lightbulb } from 'lucide-react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { StoryNodeData } from './StoryNode';
@@ -81,32 +82,36 @@ const CurationNode = ({ id, data, selected }: NodeProps<StoryNodeData>) => {
                 <Lightbulb size={isAnchored ? 40 : 54} className="drop-shadow-[0_0_15px_rgba(245,158,11,0.6)]" />
             </div>
 
-            {/* User Info Modal - Top Right View */}
-            {showTooltip && (
+            {/* 노트 창. React Flow 는 뷰포트에 CSS transform 을 걸기 때문에 노드 안에
+                두면 줌 배율만큼 같이 커지고 화면 밖으로도 나간다. body 로 포탈해서
+                화면 정중앙에 고정한다. */}
+            {showTooltip && typeof document !== 'undefined' && createPortal(
                 <div
-                    className="absolute bottom-[130%] left-0 z-[1000] w-[650px] bg-slate-950/95 border-4 border-amber-500/40 rounded-[40px] shadow-[0_0_80px_rgba(0,0,0,0.9)] p-12 backdrop-blur-3xl animate-in fade-in slide-in-from-bottom-6 origin-bottom-left nodrag nopan cursor-pointer"
+                    className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150"
                     onClick={() => setShowTooltip(false)}
                 >
-                    <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-5" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-3">
-                            <div className="w-4 h-4 rounded-full bg-amber-500 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.8)]" />
-                            <span className="text-[14px] font-black text-amber-500 uppercase tracking-[0.3em]">GUIDE NOTE</span>
+                    <div
+                        className="w-full max-w-2xl max-h-[80vh] overflow-y-auto bg-slate-950/95 border-4 border-amber-500/40 rounded-[32px] shadow-[0_0_80px_rgba(0,0,0,0.9)] p-10 animate-in zoom-in-95 duration-200 cursor-pointer"
+                        onClick={() => setShowTooltip(false)}
+                    >
+                        <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-5" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-3">
+                                <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse shadow-[0_0_20px_rgba(245,158,11,0.8)]" />
+                                <span className="text-[12px] font-black text-amber-500 uppercase tracking-[0.3em]">GUIDE NOTE</span>
+                            </div>
+                        </div>
+                        <div
+                            className="text-[18px] text-slate-100 leading-[1.6] font-bold drop-shadow-lg cursor-text break-words whitespace-pre-wrap select-text"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <CurationText content={data.content} />
+                        </div>
+                        <div className="mt-8 text-[11px] text-center text-amber-500/40 font-black uppercase tracking-[0.4em] border-t border-white/10 pt-6">
+                            CLICK ANYWHERE TO DISMISS
                         </div>
                     </div>
-                    <div
-                        className="text-[26px] text-slate-100 leading-[1.5] font-black italic opacity-100 drop-shadow-lg cursor-text break-words whitespace-pre-wrap select-text"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <CurationText content={data.content} />
-                    </div>
-                    <div
-                        className="mt-8 text-[12px] text-center text-amber-500/40 font-black uppercase tracking-[0.4em] border-t border-white/10 pt-6 hover:text-amber-500 transition-colors"
-                    >
-                        CLICK ANYWHERE TO DISMISS
-                    </div>
-                    {/* Arrow/Pointer to icon */}
-                    <div className="absolute -bottom-3 left-10 w-6 h-6 bg-slate-950 border-r-4 border-b-4 border-amber-500/40 rotate-45" />
-                </div>
+                </div>,
+                document.body,
             )}
 
             <Handle type="source" position={Position.Bottom} id="anchor" className={handleClass} />
