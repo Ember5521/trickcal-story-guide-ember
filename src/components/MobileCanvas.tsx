@@ -43,6 +43,9 @@ interface Node {
     y?: number;
 }
 
+// Info 버튼 롱프레스 -> 관리자 진입. PC/모바일 같은 값을 쓴다.
+const LONG_PRESS_MS = 1000;
+
 export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleView: () => void, isMobileView: boolean }) {
     const [nodes, setNodes] = useState<Node[]>([]);
     const [edges, setEdges] = useState<any[]>([]);
@@ -630,6 +633,27 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         }
     };
 
+    /**
+     * 관리자 진입은 Info 버튼 롱프레스(1초)뿐이다. PC(StoryCanvas)도 같다.
+     * 헤더에 상시 버튼을 두면 좁은 화면에서 시즌/필터 셀렉트를 밀어낸다.
+     * 롱프레스가 발동하면 뒤따르는 click(정보창)은 삼킨다.
+     */
+    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const longPressFired = useRef(false);
+
+    const startAdminPress = () => {
+        longPressFired.current = false;
+        longPressTimer.current = setTimeout(() => {
+            longPressFired.current = true;
+            toggleAdmin();
+        }, LONG_PRESS_MS);
+    };
+
+    const cancelAdminPress = () => {
+        if (longPressTimer.current) clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+    };
+
     const handleDragStart = (id: string, e: React.PointerEvent) => {
         if (!isAdmin) return;
         const rect = e.currentTarget.getBoundingClientRect();
@@ -743,7 +767,18 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             <header className="relative z-50 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800/50 p-3 pt-4 shrink-0 shadow-2xl">
                 <div className="flex items-center justify-between mb-3 gap-2">
                     <div className="flex items-center gap-1.5 shrink-0">
-                        <button onClick={() => setShowInfo(!showInfo)} className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95">
+                        <button
+                            onClick={() => {
+                                if (longPressFired.current) { longPressFired.current = false; return; }
+                                setShowInfo(!showInfo);
+                            }}
+                            onPointerDown={startAdminPress}
+                            onPointerUp={cancelAdminPress}
+                            onPointerLeave={cancelAdminPress}
+                            onPointerCancel={cancelAdminPress}
+                            onContextMenu={e => e.preventDefault()}
+                            className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95 select-none touch-none"
+                        >
                             <Info size={16} />
                         </button>
                         <button onClick={onToggleView} className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95" title="PC View">
@@ -766,13 +801,12 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         </button>
                     </div>
 
-                    {/* Admin Center Group */}
-                    {(
+                    {/* Admin Center Group — 로그인 상태에서만 자리를 차지한다. 진입은 Info 롱프레스. */}
+                    {isAdmin && (
                         <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-800/30 rounded-2xl border border-white/5 shadow-inner">
-                            <button onClick={toggleAdmin} className={`p-1.5 rounded-lg border transition-all ${isAdmin ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-transparent border-none text-slate-800 opacity-[0.15] hover:opacity-50'}`}>
+                            <button onClick={toggleAdmin} className="p-1.5 rounded-lg border bg-indigo-600 border-indigo-500 text-white transition-all">
                                 <Shield size={14} />
                             </button>
-                            {isAdmin && (
                                 <>
                                     <button
                                         onClick={handleUndo}
@@ -812,7 +846,6 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <X size={13} />
                                     </button>
                                 </>
-                            )}
                         </div>
                     )}
 

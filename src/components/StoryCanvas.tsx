@@ -81,6 +81,9 @@ const viewportSelector = (state: any) => ({
     zoom: state.transform[2],
 });
 
+// Info 버튼 롱프레스 -> 관리자 진입. PC/모바일 같은 값을 쓴다.
+const LONG_PRESS_MS = 1000;
+
 function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => void, isMobileView: boolean }) {
     const { setCenter, screenToFlowPosition, getViewport, setViewport } = useReactFlow();
     // Core State
@@ -1297,6 +1300,28 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         leaveAdmin();
     };
 
+    /**
+     * 관리자 진입은 Info 버튼 롱프레스(1초)뿐이다. 모바일(MobileCanvas)도 같다.
+     * 예전에는 우하단에 opacity 0.03 짜리 Shield 를 상시 띄웠는데,
+     * hover 가 없는 모바일에서는 "안 보이는데 눌리는 버튼"이라 오탭이 났다.
+     * 롱프레스가 발동하면 뒤따르는 click(안내창)은 삼킨다.
+     */
+    const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const longPressFired = useRef(false);
+
+    const startAdminPress = () => {
+        longPressFired.current = false;
+        longPressTimer.current = setTimeout(() => {
+            longPressFired.current = true;
+            toggleAdmin();
+        }, LONG_PRESS_MS);
+    };
+
+    const cancelAdminPress = () => {
+        if (longPressTimer.current) clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+    };
+
     const toggleAdmin = async () => {
         if (isAdmin) {
             const ok = await syncToCloud(nodes, edges);
@@ -1755,8 +1780,16 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     {/* Left Group */}
                     <div className="flex items-center gap-1.5 md:gap-2">
                         <button
-                            onClick={() => setShowInfo(true)}
-                            className="p-2 md:p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 transition-all border border-slate-700"
+                            onClick={() => {
+                                if (longPressFired.current) { longPressFired.current = false; return; }
+                                setShowInfo(true);
+                            }}
+                            onPointerDown={startAdminPress}
+                            onPointerUp={cancelAdminPress}
+                            onPointerLeave={cancelAdminPress}
+                            onPointerCancel={cancelAdminPress}
+                            onContextMenu={e => e.preventDefault()}
+                            className="p-2 md:p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 transition-all border border-slate-700 select-none"
                             title="가이드 안내"
                             data-tutorial="info"
                             data-tutorial-label="가이드 정보"
@@ -2555,13 +2588,13 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 )
             }
 
-            {/* Discreet Admin Toggle (Guarded for Production) */}
-            {(
+            {/* 저장하고 나가기. 진입은 Info 롱프레스라 로그아웃 상태에서는 띄우지 않는다. */}
+            {isAdmin && (
                 <div className="fixed bottom-6 right-6 z-[60]">
                     <button
                         onClick={toggleAdmin}
-                        className={`p-2 rounded-lg transition-all ${isAdmin ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'bg-transparent border-none text-slate-800 opacity-[0.03] hover:opacity-30'}`}
-                        title="관리자 설정"
+                        className="p-2 rounded-lg transition-all bg-indigo-600/20 text-indigo-400 border border-indigo-500/30"
+                        title="저장하고 관리자 종료"
                     >
                         <Shield size={14} />
                     </button>
