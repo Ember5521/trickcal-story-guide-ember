@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Sprout, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet, RotateCcw
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet, RotateCcw
 } from 'lucide-react';
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
@@ -12,6 +12,7 @@ import { canUndo, createUndoStack, layoutSignature, record, undo as popUndo } fr
 import { resolveAnchor } from '../lib/curation.mjs';
 import YouTubeEmbed from './YouTubeEmbed';
 import { CurationText } from './CurationNode';
+import { getSpecialStoryType, isSpecialStoryType, SpecialStoryIcon, type SpecialStoryType } from './SpecialStoryType';
 
 const isProd = process.env.NODE_ENV === 'production';
 const repoName = 'trickcal-story-guide-ember';
@@ -20,7 +21,7 @@ const isDbConfigured = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NE
 const TABLE_NAME = process.env.NEXT_PUBLIC_STORY_TABLE_NAME || 'story_data';
 interface StoryNodeData {
     label: string;
-    type: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation' | 'frontier';
+    type: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'annotation' | SpecialStoryType;
     image: string;
     youtubeUrl: string;
     fullVideoUrl?: string;
@@ -63,7 +64,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
-    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal' | 'annotation' | 'frontier'>('main');
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'special' | 'annotation'>('main');
     const [searchQuery, setSearchQuery] = useState('');
     const [showInfo, setShowInfo] = useState(false);
     const [showMemo, setShowMemo] = useState(false);
@@ -987,6 +988,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         const isRight = colIndex === 1;
                         const isDragging = draggedId === node.id;
                         const isDimmed = !isAdmin && node.data.type !== 'annotation' && (node.data.importance || 0) < importanceFilter;
+                        const specialType = getSpecialStoryType(node.data.type);
 
                         // Drag override
                         const dragStyle = isDragging ? {
@@ -1018,14 +1020,12 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 }}
                             >
                                 <div className={`h-full group relative transition-all ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800 rounded-2xl' : ''} ${navHighlightedNodeId === node.id ? 'ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)] rounded-2xl animate-pulse z-10' : matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] rounded-2xl' : ''}`}>
-                                <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500 ${node.data.watched ? 'opacity-60 border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'hover:bg-slate-800/60 shadow-lg border-slate-800/40'}`}>
+                                <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500
+                                    ${node.data.watched ? 'opacity-60 bg-emerald-500/5 ring-1 ring-emerald-500/20' : 'hover:bg-slate-800/60'}
+                                    ${specialType ? `${specialType.mobileBorder} ${specialType.glow}` : node.data.watched ? 'border-emerald-500/50' : 'border-slate-800/40 shadow-lg'}`}>
                                         <div className="relative h-full aspect-square bg-black/20 shrink-0 flex items-center justify-center p-1 border-r border-slate-800/30">
                                             <img src={getImageUrl(node.data.image)} alt={node.data.label} loading="lazy" className="max-w-full max-h-full object-contain drop-shadow-2xl" />
-                                            {node.data.type === 'eternal' && (
-                                                <div className="absolute top-1 left-1 z-10 bg-emerald-500/80 rounded-full p-0.5 shadow-[0_0_5px_rgba(16,185,129,0.5)]">
-                                                    <Sprout size={10} className="text-white" />
-                                                </div>
-                                            )}
+                                            <SpecialStoryIcon type={node.data.type} compact />
                                             {node.data.youtubeUrl && !node.data.watched && (
                                                 <div className="absolute inset-0 flex items-center justify-center bg-black/10">
                                                     <Play className="text-white/30 fill-white/10" size={18} />
@@ -1036,8 +1036,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <div className="flex-1 px-2.5 min-w-0 flex flex-col justify-center gap-1">
                                             {/* Top Row: Type & Video Indicator */}
                                             <div className="flex items-center gap-1.5">
-                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' || node.data.type === 'theme_now' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'theme_x' ? 'bg-rose-500/20 text-rose-400' : node.data.type === 'eternal' ? 'bg-emerald-500/20 text-emerald-400' : node.data.type === 'annotation' ? 'bg-amber-500/20 text-amber-400' : node.data.type === 'frontier' ? 'bg-orange-600/20 text-orange-400' : 'bg-slate-500/20 text-slate-400'}`}>
-                                                    {node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : node.data.type === 'theme_now' ? 'THEME (상영중)' : node.data.type === 'eternal' ? 'ETERNAL' : node.data.type === 'annotation' ? 'CURATION' : node.data.type === 'frontier' ? 'FRONTIER' : 'ETC'}
+                                                <span className={`text-[7px] px-1.5 py-0.5 rounded-full font-black tracking-widest uppercase ${specialType?.pill ?? (node.data.type === 'main' ? 'bg-blue-500/20 text-blue-400' : node.data.type === 'theme' || node.data.type === 'theme_now' ? 'bg-purple-500/20 text-purple-400' : node.data.type === 'theme_x' ? 'bg-rose-500/20 text-rose-400' : node.data.type === 'annotation' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-500/20 text-slate-400')}`}>
+                                                    {specialType?.label ?? (node.data.type === 'main' ? 'MAIN' : node.data.type === 'theme' ? 'THEME' : node.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : node.data.type === 'theme_now' ? 'THEME (상영중)' : node.data.type === 'annotation' ? 'CURATION' : 'ETC')}
                                                 </span>
                                                 {node.data.youtubeUrl && (
                                                     <Youtube size={10} className="text-rose-500/60" />
@@ -1160,7 +1160,11 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         <option value="theme_now">Theme(상영중)</option>
                                         <option value="etc">ETC</option>
                                         <option value="eternal">영원살이</option>
-                                        <option value="frontier">FRONTIER</option>
+                                        <option value="frontier">프론티어</option>
+                                        <option value="unwanted_exam">원치않는 시험</option>
+                                        <option value="flickering_light">깜빡이는 빛무리</option>
+                                        <option value="dimension_ruler">차원의 패자</option>
+                                        <option value="silver_life">은은히 빛나는 은생</option>
                                         <option value="annotation">큐레이션</option>
                                     </select>
                                 </div>
@@ -1180,7 +1184,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     </label>
                                 </div>
                             </div>
-                            {(formData.type === 'theme' || formData.type === 'theme_x' || formData.type === 'eternal' || formData.type === 'frontier') && (
+                            {(formData.type === 'theme' || formData.type === 'theme_x' || formData.type === 'theme_now' || isSpecialStoryType(formData.type)) && (
                                 <div>
                                     <label className="text-[9px] text-slate-500 font-black uppercase mb-1 block">Protagonist</label>
                                     <input type="text" value={formData.protagonist || ''} onChange={e => setFormData({ ...formData, protagonist: e.target.value })} className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="에르핀, 네르 등" />
@@ -1469,8 +1473,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     <div className="w-full max-w-lg flex flex-col items-center px-6 my-auto animate-in zoom-in-95 duration-300">
                         {/* Status Badge Above Image */}
                         <div className="mb-4">
-                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'theme_now' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'theme_x' ? 'bg-rose-600/60 text-white' : selectedDetailNode.data.type === 'eternal' ? 'bg-emerald-600/60 text-white' : selectedDetailNode.data.type === 'frontier' ? 'bg-orange-600/60 text-white' : selectedDetailNode.data.type === 'annotation' ? 'bg-amber-600/60 text-white' : 'bg-slate-700/60 text-white'}`}>
-                                {selectedDetailNode.data.type === 'eternal' ? 'ETERNAL' : selectedDetailNode.data.type === 'annotation' ? 'CURATION' : selectedDetailNode.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : selectedDetailNode.data.type === 'theme_now' ? 'THEME (상영중)' : selectedDetailNode.data.type === 'frontier' ? 'FRONTIER' : selectedDetailNode.data.type}
+                            <span className={`text-[10px] px-6 py-2 rounded-full font-black tracking-[0.3em] uppercase shadow-lg backdrop-blur-md border border-white/10 ${getSpecialStoryType(selectedDetailNode.data.type)?.pill ?? (selectedDetailNode.data.type === 'main' ? 'bg-blue-600/60 text-white' : selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'theme_now' ? 'bg-purple-600/60 text-white' : selectedDetailNode.data.type === 'theme_x' ? 'bg-rose-600/60 text-white' : selectedDetailNode.data.type === 'annotation' ? 'bg-amber-600/60 text-white' : 'bg-slate-700/60 text-white')}`}>
+                                {getSpecialStoryType(selectedDetailNode.data.type)?.label ?? (selectedDetailNode.data.type === 'annotation' ? 'CURATION' : selectedDetailNode.data.type === 'theme_x' ? 'THEME (재개봉관 준비 중)' : selectedDetailNode.data.type === 'theme_now' ? 'THEME (상영중)' : selectedDetailNode.data.type)}
                             </span>
                         </div>
                         {/* Poster Box - Original Aspect Ratio */}
@@ -1508,7 +1512,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         className="flex items-center justify-center gap-3 w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-rose-900/40 transition-all active:scale-95 border border-rose-400/30"
                                     >
                                         <Youtube size={20} />
-                                        <span>{selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'eternal' || selectedDetailNode.data.type === 'theme_x' || selectedDetailNode.data.type === 'theme_now' || selectedDetailNode.data.type === 'frontier' ? 'PV 시청하기' : 'YOUTUBE 시청하기'}</span>
+                                        <span>{selectedDetailNode.data.type === 'theme' || selectedDetailNode.data.type === 'theme_x' || selectedDetailNode.data.type === 'theme_now' || isSpecialStoryType(selectedDetailNode.data.type) ? 'PV 시청하기' : 'YOUTUBE 시청하기'}</span>
                                     </button>
                                 )}
                                 {selectedDetailNode.data.fullVideoUrl && (
@@ -1558,7 +1562,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         </div>
 
                         <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
-                            {(['main', 'theme', 'etc', 'eternal', 'frontier', 'annotation'] as const).map((cat) => (
+                            {(['main', 'theme', 'etc', 'special', 'annotation'] as const).map((cat) => (
                                 <button
                                     key={cat}
                                     onClick={() => setLibraryCategory(cat)}
@@ -1567,7 +1571,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         : 'text-slate-500 hover:text-slate-300'
                                         }`}
                                 >
-                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : cat === 'eternal' ? 'Eternal' : cat === 'frontier' ? 'Frontier' : cat === 'annotation' ? '큐레이션' : 'ETC'}
+                                    {cat === 'main' ? 'Main' : cat === 'theme' ? 'Theme' : cat === 'special' ? '특수' : cat === 'annotation' ? '큐레이션' : 'ETC'}
                                 </button>
                             ))}
                         </div>
@@ -1579,14 +1583,14 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
                                 <p className="text-xs font-bold animate-pulse uppercase tracking-widest">Loading Library...</p>
                             </div>
-                        ) : masterStories.filter(m => libraryCategory === 'theme' ? (m.type === 'theme' || m.type === 'theme_x' || m.type === 'theme_now') : m.type === libraryCategory).length === 0 ? (
+                        ) : masterStories.filter(m => libraryCategory === 'theme' ? (m.type === 'theme' || m.type === 'theme_x' || m.type === 'theme_now') : libraryCategory === 'special' ? isSpecialStoryType(m.type) : m.type === libraryCategory).length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-500">
                                 <Library size={40} className="opacity-20" />
                                 <p className="text-sm font-bold opacity-40">이 카테고리에 마스터 노드가 없습니다.</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-5 gap-1.5">
-                                {masterStories.filter(m => libraryCategory === 'theme' ? (m.type === 'theme' || m.type === 'theme_x' || m.type === 'theme_now') : m.type === libraryCategory).map((m) => (
+                                {masterStories.filter(m => libraryCategory === 'theme' ? (m.type === 'theme' || m.type === 'theme_x' || m.type === 'theme_now') : libraryCategory === 'special' ? isSpecialStoryType(m.type) : m.type === libraryCategory).map((m) => (
                                     <button
                                         key={m.id}
                                         onClick={() => handleImportMaster(m)}

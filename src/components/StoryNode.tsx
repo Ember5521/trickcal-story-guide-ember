@@ -2,12 +2,13 @@
 
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps, NodeResizer } from 'reactflow';
-import { Youtube, User, Star, CheckCircle, Sprout } from 'lucide-react';
+import { Youtube, CheckCircle } from 'lucide-react';
 import { imageUrl } from '../lib/api';
+import { getSpecialStoryType, isSpecialStoryType, SpecialStoryIcon, type SpecialStoryType } from './SpecialStoryType';
 
 export interface StoryNodeData {
     label?: string;
-    type?: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'eternal' | 'annotation' | 'frontier';
+    type?: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'annotation' | SpecialStoryType;
     image?: string;
     youtubeUrl?: string;
     fullVideoUrl?: string;
@@ -36,9 +37,17 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
     const isAdmin = data.isAdmin;
     const isHighlighted = data.highlighted;
     const isRecentlyNavigated = data.isRecentlyNavigated;
+    const specialType = getSpecialStoryType(data.type);
 
     // Harmonious colors based on type
     const getTypeColorClasses = () => {
+        if (specialType) return {
+            border: specialType.border,
+            ring: specialType.ring,
+            bg: 'bg-slate-950/90',
+            text: 'text-white',
+            badge: `${specialType.pill} border border-white/20`,
+        };
         if (data.type === 'main') return {
             border: 'border-slate-700',
             ring: 'ring-indigo-500/30',
@@ -67,26 +76,12 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             text: 'text-rose-200',
             badge: 'bg-rose-950/60 text-rose-100 border border-rose-500/30'
         };
-        if (data.type === 'eternal') return {
-            border: 'border-emerald-600',
-            ring: 'ring-emerald-500/50',
-            bg: 'bg-slate-950/90',
-            text: 'text-emerald-300',
-            badge: 'bg-emerald-900/40 text-emerald-100 border border-emerald-500/30'
-        };
         if (data.type === 'annotation') return {
             border: 'border-orange-600',
             ring: 'ring-orange-500/50',
             bg: 'bg-slate-900/90',
             text: 'text-orange-400',
             badge: 'bg-orange-900/30 text-orange-200 border border-orange-500/30'
-        };
-        if (data.type === 'frontier') return {
-            border: 'border-orange-600',
-            ring: 'ring-orange-500/50',
-            bg: 'bg-slate-900/90',
-            text: 'text-orange-400',
-            badge: 'bg-orange-950/60 text-orange-200 border border-orange-500/30'
         };
         return {
             border: 'border-slate-700',
@@ -152,7 +147,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
             {/* Grayscale/Opacity wrapper for watched state inside the ring - Includes border and BG */}
             <div className={`
                 w-full h-full flex flex-col rounded-2xl
-                ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} border-[6px] ${isWatched ? 'border-emerald-500/50' : theme.border}
+                ${data.type === 'eternal' ? 'bg-[#062016]' : 'bg-slate-900'} border-[6px] ${isWatched && !specialType ? 'border-emerald-500/50' : theme.border}
                 transition-all duration-500 ${isWatched ? 'opacity-70 shadow-[0_0_30px_rgba(16,185,129,0.25)]' : ''}
             `}>
                 {/* Theme X Special Badge (Sign at the top) */}
@@ -230,14 +225,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                         }} />
                     )}
 
-                    {/* Sprout Icon for Eternal Type */}
-                    {data.type === 'eternal' && (
-                        <div className="absolute top-2 left-2 z-30 drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]">
-                            <div className="bg-emerald-500/20 backdrop-blur-md p-1.5 rounded-full border border-emerald-500/30">
-                                <Sprout size={24} className="text-emerald-400" />
-                            </div>
-                        </div>
-                    )}
+                    <SpecialStoryIcon type={data.type} />
 
                     {/* Watched Overlay Icon - Only in User Mode */}
                     {isWatched && (
@@ -274,7 +262,7 @@ const StoryNode = ({ data, selected }: NodeProps<StoryNodeData>) => {
                                     `}
                                 >
                                     <Youtube size={20} />
-                                    <span>{data.type === 'etc' || data.type === 'eternal' || data.type === 'frontier' ? '시청하기' : 'PV 시청하기'}</span>
+                                    <span>{data.type === 'etc' || isSpecialStoryType(data.type) ? '시청하기' : 'PV 시청하기'}</span>
                                 </button>
                             )}
 

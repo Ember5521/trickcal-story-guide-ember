@@ -35,6 +35,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 
 import StoryNode, { StoryNodeData } from './StoryNode';
+import { getSpecialStoryType, isSpecialStoryType } from './SpecialStoryType';
 
 const nodeTypes = {
     storyNode: StoryNode,
@@ -254,7 +255,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
-    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'eternal' | 'annotation' | 'frontier'>('main');
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'special' | 'annotation'>('main');
     const [masterSearchQuery, setMasterSearchQuery] = useState('');
     const [showUpdateLog, setShowUpdateLog] = useState(false);
     const [updateLogContent, setUpdateLogContent] = useState('');
@@ -436,6 +437,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             if (libraryCategory === 'theme') {
                 return m.type === 'theme' || m.type === 'theme_x' || m.type === 'theme_now';
             }
+            if (libraryCategory === 'special') return isSpecialStoryType(m.type);
             return m.type === libraryCategory;
         });
         if (!query) return categoryFiltered;
@@ -2145,7 +2147,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             </div>
 
                             <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
-                                {(['main', 'theme', 'etc', 'eternal', 'frontier', 'annotation'] as const).map((cat) => (
+                                {(['main', 'theme', 'etc', 'special', 'annotation'] as const).map((cat) => (
                                     <button
                                         key={cat}
                                         onClick={() => setLibraryCategory(cat)}
@@ -2157,8 +2159,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         {cat === 'main' ? '메인' :
                                             cat === 'theme' ? '테마' :
                                                 cat === 'etc' ? '기타' :
-                                                    cat === 'eternal' ? '영원살이' :
-                                                        cat === 'frontier' ? 'FRONTIER' : '큐레이션'}
+                                                    cat === 'special' ? '특수' : '큐레이션'}
                                     </button>
                                 ))}
                             </div>
@@ -2218,14 +2219,13 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                     <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-tighter ${m.type === 'main' ? 'bg-indigo-500/80 text-white' :
                                                         m.type === 'theme' ? 'bg-amber-500/80 text-white' :
                                                             m.type === 'theme_x' ? 'bg-rose-600/90 text-white shadow-lg shadow-rose-500/20' :
-                                                                m.type === 'theme_now' ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/20' :
-                                                                    m.type === 'eternal' ? 'bg-amber-600 text-white border border-amber-400/50' :
-                                                                        m.type === 'annotation' ? 'bg-orange-600 text-white' :
-                                                                            m.type === 'frontier' ? 'bg-orange-600/90 text-white shadow-lg shadow-orange-500/20' :
-                                                                                'bg-emerald-500/80 text-white'
+                                                                m.type === 'theme_now' ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/20' : (
+                                                                    getSpecialStoryType(m.type)?.pill ??
+                                                                        (m.type === 'annotation' ? 'bg-orange-600 text-white' :
+                                                                            'bg-emerald-500/80 text-white'))
                                                         }`}>
                                                         {m.type === 'theme_x' ? '테마(미개봉)' :
-                                                            m.type === 'theme_now' ? '테마(상영중)' : m.type}
+                                                            m.type === 'theme_now' ? '테마(상영중)' : getSpecialStoryType(m.type)?.label ?? m.type}
                                                     </span>
                                                 </div>
                                             </div>
@@ -2276,7 +2276,11 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             <option value="theme_now">테마극장(상영중)</option>
                                             <option value="etc">사복/기타</option>
                                             <option value="eternal">영원살이</option>
-                                            <option value="frontier">FRONTIER</option>
+                                            <option value="frontier">프론티어</option>
+                                            <option value="unwanted_exam">원치않는 시험</option>
+                                            <option value="flickering_light">깜빡이는 빛무리</option>
+                                            <option value="dimension_ruler">차원의 패자</option>
+                                            <option value="silver_life">은은히 빛나는 은생</option>
                                             <option value="annotation">큐레이션</option>
                                         </select>
                                     </div>
@@ -2464,8 +2468,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                     </>
                                 )}
 
-                                {/* Conditional Fields: THEME or ETERNAL */}
-                                {(formData.type === 'theme' || formData.type === 'eternal') && (
+                                {/* Conditional Fields: THEME or special story */}
+                                {(formData.type === 'theme' || formData.type === 'theme_x' || formData.type === 'theme_now' || isSpecialStoryType(formData.type)) && (
                                     <>
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">주요 등장인물</label>
