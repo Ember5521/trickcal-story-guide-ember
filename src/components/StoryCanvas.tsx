@@ -473,7 +473,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         // 1. Collect all Potential Edges first (without handles)
         const rawEdges: any[] = [];
 
-        // Solid Edges
+        // Saved connections
         edges.forEach(e => {
             if (!visibleNodeIds.has(e.source) || !visibleNodeIds.has(e.target)) return;
             // 큐레이션은 카드 코너에 물려 있어 선을 그릴 필요가 없다. 다만 관리자는
@@ -644,12 +644,14 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         return rawEdges.map((re, idx) => {
             const { bS, bT } = assignedEdges.get(idx)!;
             const isCuration = isCurationEdge(re);
+            const required = !isCuration && !re.isVirtual && re.data?.required === true;
             const anchorHandle = curationIds.has(re.source) ? re.targetHandle : re.sourceHandle;
-            const color = isCuration ? (anchorHandle === 'topRight' ? '#0ea5e9' : '#f59e0b') : activeColor;
+            const color = isCuration ? (anchorHandle === 'topRight' ? '#0ea5e9' : '#f59e0b') : required ? '#38bdf8' : activeColor;
 
-            const style: any = { strokeWidth: isCuration ? 2 : stdWidth, stroke: color, opacity: isCuration ? 0.5 : 1 };
-            if (re.isVirtual) style.strokeDasharray = '12,8';
-            else if (isCuration) style.strokeDasharray = '6,6';
+            const style: any = { strokeWidth: isCuration ? 2 : required ? 9 : stdWidth, stroke: color, opacity: isCuration ? 0.5 : 1 };
+            if (required) style.filter = 'drop-shadow(0 0 5px #38bdf8)';
+            if (isCuration) style.strokeDasharray = '6,6';
+            else if (!required) style.strokeDasharray = '12,8';
 
             return {
                 ...re,
@@ -658,7 +660,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 sourceHandle: isCuration ? re.sourceHandle : bS,
                 targetHandle: isCuration ? re.targetHandle : bT,
                 type: 'smoothstep',
-                animated: !isCuration,
+                animated: !isCuration && !required,
                 markerEnd: {
                     type: MarkerType.ArrowClosed,
                     color,
@@ -1510,16 +1512,18 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     }, [isAdmin, toggleWatch]);
     const onEdgeClick = useCallback((ev: React.MouseEvent, e: Edge) => {
         if (!isAdmin) return;
-        // ev.stopPropagation(); // Fixed: Allow selection for deletion
+        if ((e as Edge & { isVirtual?: boolean }).isVirtual ||
+            nodes.some(n => n.type === 'annotationNode' && (n.id === e.source || n.id === e.target))) return;
         if (edgeClickTimeoutRef.current) {
             clearTimeout(edgeClickTimeoutRef.current);
             edgeClickTimeoutRef.current = null;
             return;
         }
         edgeClickTimeoutRef.current = setTimeout(() => {
-            const newT = e.type === 'step' ? 'straight' : 'step';
             setEdges(eds => {
-                const up = eds.map(x => x.id === e.id ? { ...x, type: newT } : x);
+                const up = eds.map(x => x.id === e.id
+                    ? { ...x, data: { ...x.data, required: x.data?.required !== true } }
+                    : x);
                 saveLocal(nodes, up);
                 return up;
             });
@@ -2023,6 +2027,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
                     <Panel position="bottom-left" className="mb-6 ml-6 flex flex-col gap-3">
                         <ZoomControl onReset={resetView} />
+                        {isAdmin && <div className="rounded-lg bg-slate-900/90 px-3 py-2 text-xs text-slate-200">연결선 클릭: 점선 ↔ 필수 실선 · 더블클릭: 삭제</div>}
                     </Panel>
                 </ReactFlow>
             </main>
@@ -2853,6 +2858,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             <p className="text-[11px] leading-relaxed text-slate-400">
                                 <b className="text-slate-300">가이드 안내</b><br />
                                 • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
+                                • 밝은 하늘색 실선은 다음 스토리를 바로 이어서 보는 순서, 점선은 순서를 조정해도 되는 연결입니다.<br />
                                 • 본 사이트는 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                             </p>
                         </div>

@@ -85,7 +85,7 @@ export const canUndo = (stack) => stack.history.length > 0;
  * 시청 여부나 검색 하이라이트 같은 건 배치가 아니므로 무시한다.
  *
  * @param {Array<{ id: string, position?: { x: number, y: number }, width?: number | null, height?: number | null, data?: Record<string, any> }>} nodes
- * @param {Array<{ source: string, target: string }>} [edges]
+ * @param {Array<{ source: string, target: string, data?: { required?: boolean } }>} [edges]
  */
 export const layoutSignature = (nodes, edges = []) =>
     nodes
@@ -104,4 +104,4 @@ export const layoutSignature = (nodes, edges = []) =>
         )
         .join('|') +
     '#' +
-    edges.map((e) => `${e.source}>${e.target}`).join('|');
+    edges.map((e) => `${e.source}>${e.target}:${e.data?.required === true ? 1 : 0}`).join('|');
