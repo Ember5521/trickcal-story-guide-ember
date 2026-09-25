@@ -438,7 +438,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const ROW_HEIGHT = 70;
     const ROW_GAP = 6;
     const SLOT_UNIT = 80; // Slightly tighter slot unit
-    const BOARD_HEIGHT = viewType === 'recommended' && season >= 2 ? ROW_HEIGHT + ROW_GAP : 0;
+    const BOARD_HEIGHT = viewType === 'recommended' && season >= 2 ? (ROW_HEIGHT + ROW_GAP) * 1.5 : 0;
 
     // Layout Logic (Slot-based Engine)
     const layoutInfo = useMemo(() => {
@@ -1014,9 +1014,14 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     <div className="absolute left-[60%] top-0 bottom-0 w-px bg-white/10" />
 
                     {BOARD_HEIGHT > 0 && <div className="absolute z-10 left-0 top-0 w-full p-1" style={{ height: BOARD_HEIGHT }}>
-                        <div className="flex h-full flex-col justify-center rounded-xl border border-sky-400/50 bg-slate-900/95 px-3 py-1 shadow-lg shadow-sky-950/40">
-                            <div className="mb-0.5 flex items-center gap-1 text-[11px] font-black text-sky-300"><Link2 size={14} /> 테마극장 안내</div>
-                            <p className="text-[10px] leading-[14px] text-slate-200 break-keep">체인으로 이어진 순서대로 시청<br />표시가 없으면 자유롭게 시청</p>
+                        <div className="h-full overflow-y-auto rounded-xl border border-sky-400/50 bg-slate-900/95 px-2 py-1 shadow-lg shadow-sky-950/40">
+                            <div className="flex min-h-full flex-col">
+                                <div className="mb-1 flex items-center gap-1 text-[12px] font-black text-sky-300"><Link2 size={14} /> 체인 아이콘 안내</div>
+                                <div className="flex flex-1 flex-col justify-center gap-1.5 text-[11px] leading-[14px] text-slate-200 break-keep">
+                                    <p>체인 아이콘이 있는 경우 해당 메인스토리 전반부 후반부 사이 테마극장이 시간상 연관이 있습니다.</p>
+                                    <p>체인 아이콘이 없는 경우 메인스토리 전반/후반부 사이 테마극장이 큰 연결은 없습니다.</p>
+                                </div>
+                            </div>
                         </div>
                     </div>}
 
