@@ -460,7 +460,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 ...node,
                 rowIndex,
                 colIndex,
-                renderTop: rowIndex * (ROW_HEIGHT + ROW_GAP) + (colIndex === 1 ? BOARD_HEIGHT : 0)
+                renderTop: rowIndex * (ROW_HEIGHT + ROW_GAP) + BOARD_HEIGHT
             };
         });
 
@@ -487,7 +487,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
             totalHeight: (maxRow + 10) * (ROW_HEIGHT + ROW_GAP) + 400 + BOARD_HEIGHT,
             maxRow
         };
-    }, [nodes, edges, season]);
+    }, [nodes, edges, season, viewType]);
 
     const chainPairs = useMemo(
         () => viewType === 'recommended' ? mobileChainPairs(layoutInfo.nodes, edges) : [], [layoutInfo.nodes, edges, viewType]);
@@ -716,7 +716,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
         // Calculate Target Logical Indices for order check
         const c = dropX >= scrollRect.width * 0.6 ? 1 : 0;
-        const r = Math.max(0, Math.floor((dropY - (c === 1 ? BOARD_HEIGHT : 0)) / (ROW_HEIGHT + ROW_GAP)));
+        const r = Math.max(0, Math.floor((dropY - BOARD_HEIGHT) / (ROW_HEIGHT + ROW_GAP)));
 
         const node = nodes.find(n => n.id === draggedId);
         if (!node) { setDraggedId(null); return; }
@@ -1029,7 +1029,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 key={`slot-${i}`}
                                 className="absolute border border-dashed border-white/5 pointer-events-none"
                                 style={{
-                                    top: `${r * (ROW_HEIGHT + ROW_GAP) + (c === 1 ? BOARD_HEIGHT : 0)}px`,
+                                    top: `${r * (ROW_HEIGHT + ROW_GAP) + BOARD_HEIGHT}px`,
                                     left: c === 1 ? '60%' : '0',
                                     width: c === 1 ? '40%' : '60%',
                                     height: `${ROW_HEIGHT}px`,
