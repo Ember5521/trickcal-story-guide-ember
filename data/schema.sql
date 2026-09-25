@@ -19,8 +19,8 @@ CREATE TABLE IF NOT EXISTS master_stories (
     part_label     TEXT    NOT NULL DEFAULT '',
     split_type     TEXT    NOT NULL DEFAULT 'none',
     importance     INTEGER NOT NULL DEFAULT 0,
-    -- 큐레이션(type='annotation') 본문. label 은 라이브러리에서 고르기 위한 짧은
-    -- 이름이라 본문을 담을 수 없다. 스토리 노드에서는 빈 문자열.
+    -- 큐레이션(type='annotation')·게시판(type='board') 본문.
+    -- label 은 라이브러리에서 고르기 위한 짧은 이름이다.
     content        TEXT    NOT NULL DEFAULT '',
     created_at     TEXT    NOT NULL,
     updated_at     TEXT    NOT NULL

@@ -83,7 +83,7 @@ export interface MasterStory {
     part_label: string;
     split_type: string;
     importance: number;
-    /** 큐레이션 본문. 스토리 노드에서는 빈 문자열. */
+    /** 큐레이션·게시판 본문. 스토리 노드에서는 빈 문자열. */
     content: string;
     created_at: string;
     updated_at: string;

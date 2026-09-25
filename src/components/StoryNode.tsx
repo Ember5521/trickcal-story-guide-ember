@@ -8,7 +8,7 @@ import { getSpecialStoryType, isSpecialStoryType, SpecialStoryIcon, type Special
 
 export interface StoryNodeData {
     label?: string;
-    type?: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'annotation' | SpecialStoryType;
+    type?: 'main' | 'theme' | 'theme_x' | 'theme_now' | 'etc' | 'annotation' | 'board' | SpecialStoryType;
     image?: string;
     youtubeUrl?: string;
     fullVideoUrl?: string;

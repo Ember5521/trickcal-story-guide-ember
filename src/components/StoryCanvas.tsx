@@ -12,6 +12,7 @@ import { imageUrl } from '../lib/api';
 import { canUndo, createUndoStack, layoutSignature, record, undo as popUndo } from '../lib/undo.mjs';
 import { resolveAnchor } from '../lib/curation.mjs';
 import CurationNode from '@/components/CurationNode';
+import BoardNode from '@/components/BoardNode';
 import YouTubeEmbed from './YouTubeEmbed';
 import ReactFlow, {
     Background,
@@ -40,6 +41,7 @@ import { getSpecialStoryType, isSpecialStoryType } from './SpecialStoryType';
 const nodeTypes = {
     storyNode: StoryNode,
     annotationNode: CurationNode,
+    boardNode: BoardNode,
 };
 
 /**
@@ -62,6 +64,7 @@ const STANDARD_SIZE: Record<string, { w: number; h: number }> = {
     frontier: { w: 338, h: 541 },
     // 원 자체가 96px 이다. 박스를 더 크게 두면 핸들이 원 바깥 허공에 뜬다.
     annotation: { w: 96, h: 96 },
+    board: { w: 360, h: 240 },
 };
 
 const defaultNodeSize = (type?: string) => {
@@ -255,7 +258,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [showMasterLibrary, setShowMasterLibrary] = useState(false);
     const [masterStories, setMasterStories] = useState<any[]>([]);
     const [isFetchingMasters, setIsFetchingMasters] = useState(false);
-    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'special' | 'annotation'>('main');
+    const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'special' | 'annotation' | 'board'>('main');
     const [masterSearchQuery, setMasterSearchQuery] = useState('');
     const [showUpdateLog, setShowUpdateLog] = useState(false);
     const [updateLogContent, setUpdateLogContent] = useState('');
@@ -376,7 +379,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         return nodes.map(node => {
             // PC Version: Hide nodes if importance is below filter level
             // Curation nodes (annotation) are always shown or treated as importance 2
-            const isBelowImportance = node.type !== 'annotationNode' && (node.data.importance || 0) < importanceFilter;
+            const isBelowImportance = node.type !== 'annotationNode' && node.type !== 'boardNode' && (node.data.importance || 0) < importanceFilter;
             let isHidden = isBelowImportance;
 
             const isMatched = isSearchActive && node.type === 'storyNode' && (
@@ -963,7 +966,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     h: node.height || (node.type === 'annotationNode' ? 96 : 200),
                 };
 
-                if (node.type === 'annotationNode') {
+                if (node.type === 'annotationNode' || node.type === 'boardNode') {
                     return {
                         ...base,
                         // 큐레이션도 master_stories 행을 가진다. 여기서 story_id를 빠뜨리면
@@ -1098,6 +1101,20 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 const hist = JSON.parse(localStorage.getItem(`watched_history_s${season}`) || '{}');
 
                 const finalNodes = layoutNodes.map(ln => {
+                    if (ln.type === 'boardNode') {
+                        const master = masterMap.get(ln.story_id);
+                        const w = ln.w || 360;
+                        const h = ln.h || 240;
+                        return {
+                            id: ln.id,
+                            type: 'boardNode',
+                            position: { x: ln.x ?? 0, y: ln.y ?? 0 },
+                            width: w, height: h,
+                            style: { width: w, height: h },
+                            data: { label: master?.label || '', type: 'board', story_id: ln.story_id,
+                                content: master?.content || ln.content || '', isAdmin },
+                        } as Node<StoryNodeData>;
+                    }
                     if (ln.type === 'annotationNode') {
                         return {
                             id: ln.id,
@@ -1540,6 +1557,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const handleSaveNode = async () => {
         // Skip title check for Curation (annotation)
         if (formData.type !== 'annotation' && !formData.label) { alert("제목 입력!"); return; }
+        if (formData.type === 'board' && !formData.content?.trim()) { alert("게시판 본문 입력!"); return; }
 
         const { w, h } = defaultNodeSize(formData.type);
 
@@ -1594,7 +1612,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             }
                         }
                     } as StoryNodeData,
-                    type: formData.type === 'annotation' ? 'annotationNode' : 'storyNode',
+                    type: formData.type === 'annotation' ? 'annotationNode' : formData.type === 'board' ? 'boardNode' : 'storyNode',
                     width: w, height: h,
                     style: { width: w, height: h }
                 };
@@ -1678,7 +1696,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
         const targets = new Set(
             scope
-                .filter(n => n.type !== 'annotationNode')
+                .filter(n => n.type !== 'annotationNode' && n.type !== 'boardNode')
                 .filter(n => STANDARD_SIZE[(n.data.type as string) ?? ''])
                 .filter(n => {
                     const std = STANDARD_SIZE[n.data.type as string];
@@ -1732,7 +1750,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     }
                 }
             } as StoryNodeData,
-            type: m.type === 'annotation' ? 'annotationNode' : 'storyNode',
+            type: m.type === 'annotation' ? 'annotationNode' : m.type === 'board' ? 'boardNode' : 'storyNode',
             width: w,
             height: h,
             // style이 없으면 ReactFlow가 내용에 맞춰 줄여버린다. 폼으로 만드는 경로와 같아야 한다.
@@ -2147,7 +2165,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             </div>
 
                             <div className="flex bg-slate-950/50 p-1 rounded-xl border border-slate-800">
-                                {(['main', 'theme', 'etc', 'special', 'annotation'] as const).map((cat) => (
+                                {(['main', 'theme', 'etc', 'special', 'annotation', 'board'] as const).map((cat) => (
                                     <button
                                         key={cat}
                                         onClick={() => setLibraryCategory(cat)}
@@ -2159,7 +2177,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         {cat === 'main' ? '메인' :
                                             cat === 'theme' ? '테마' :
                                                 cat === 'etc' ? '기타' :
-                                                    cat === 'special' ? '특수' : '큐레이션'}
+                                                    cat === 'special' ? '특수' : cat === 'board' ? '게시판' : '큐레이션'}
                                     </button>
                                 ))}
                             </div>
@@ -2206,7 +2224,12 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             onClick={() => handleImportMaster(m)}
                                             className="group relative aspect-[3/4] bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-indigo-500 transition-all hover:shadow-2xl hover:shadow-indigo-500/20"
                                         >
-                                            {m.image ? (
+                                        {m.type === 'board' ? (
+                                            <div className="h-full p-4 bg-sky-950 text-left text-sky-100 whitespace-pre-wrap break-words overflow-hidden">
+                                                <div className="font-bold mb-2">{m.label}</div>
+                                                <div className="text-xs line-clamp-8">{m.content}</div>
+                                            </div>
+                                        ) : m.image ? (
                                                 <img src={imageUrl(m.image)} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt={m.label} loading="lazy" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center bg-slate-700/30">
@@ -2252,7 +2275,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             {
                 showForm && (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                        <div className={`bg-slate-900 border border-slate-700 rounded-3xl w-full ${formData.type === 'annotation' ? 'max-w-3xl' : 'max-w-lg'} shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200`}>
+                        <div className={`bg-slate-900 border border-slate-700 rounded-3xl w-full ${formData.type === 'annotation' || formData.type === 'board' ? 'max-w-3xl' : 'max-w-lg'} shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200`}>
                             <header className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
                                 <div className="flex items-center gap-2 text-indigo-400 font-bold">
                                     <Shield size={20} />
@@ -2282,17 +2305,18 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                             <option value="dimension_ruler">차원의 패자</option>
                                             <option value="silver_life">은은히 빛나는 은생</option>
                                             <option value="annotation">큐레이션</option>
+                                            <option value="board">게시판 (PC 전용)</option>
                                         </select>
                                     </div>
                                     <div className="flex flex-col gap-1.5">
-                                        <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">스토리 제목</label>
+                                        <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">{formData.type === 'board' ? '게시판 제목' : '스토리 제목'}</label>
                                         <input type="text" value={formData.label || ''} onChange={e => setFormData({ ...formData, label: e.target.value })}
                                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-bold"
                                             placeholder="제목 입력" />
                                     </div>
                                 </div>
 
-                                {formData.type !== 'annotation' ? (
+                                {formData.type !== 'annotation' && formData.type !== 'board' ? (
                                     <>
                                         {/* Image Attachment Section */}
                                         <div className="flex flex-col gap-3 p-5 bg-slate-800/50 border border-slate-700 rounded-3xl">
@@ -2405,7 +2429,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 ) : (
                                     <div className="flex flex-col gap-6">
                                         <div className="flex flex-col gap-1.5 p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl">
-                                            <label className="text-[10px] uppercase tracking-wider font-bold text-amber-500/70 ml-1">큐레이션 설명 입력 (설명창 노출 내용)</label>
+                                            <label className="text-[10px] uppercase tracking-wider font-bold text-amber-500/70 ml-1">{formData.type === 'board' ? '게시판 본문 (지도에 바로 표시)' : '큐레이션 설명 입력 (설명창 노출 내용)'}</label>
                                             <textarea
                                                 value={formData.content || ''}
                                                 onChange={e => setFormData({ ...formData, content: e.target.value })}
@@ -2415,7 +2439,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                         </div>
 
                                         {/* Curation Preview - Actual Size Style */}
-                                        <div className="flex flex-col gap-3">
+                                        {formData.type === 'annotation' && <div className="flex flex-col gap-3">
                                             <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500 ml-1">사용자 화면 미리보기 (실제 비율)</label>
                                             <div className="w-full overflow-hidden rounded-3xl bg-slate-950/50 p-6 border border-slate-800 shadow-inner">
                                                 <div
@@ -2448,7 +2472,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
+                                        </div>}
                                     </div>
                                 )}
 

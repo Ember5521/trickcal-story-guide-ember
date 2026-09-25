@@ -49,6 +49,7 @@ const LONG_PRESS_MS = 1000;
 
 export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleView: () => void, isMobileView: boolean }) {
     const [nodes, setNodes] = useState<Node[]>([]);
+    const boardNodes = useRef<api.LayoutNode[]>([]);
     const [edges, setEdges] = useState<any[]>([]);
 
     // Load saved settings from localStorage
@@ -123,6 +124,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 // Worker가 레이아웃과 참조 스토리를 한 번에 조인해 돌려준다.
                 const layout = await api.fetchLayout(viewType, season);
                 const layoutNodes = layout.nodes as any[];
+                boardNodes.current = layoutNodes.filter(ln => ln.type === 'boardNode');
 
                 if (layoutNodes.length === 0) {
                     setNodes([]);
@@ -133,7 +135,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 const masterMap = new Map(layout.stories.map(m => [m.id, m as any]));
                 const hist = JSON.parse(localStorage.getItem(`watched_history_s${season}`) || '{}');
 
-                const processedNodes = layoutNodes.map(ln => {
+                const processedNodes = layoutNodes.filter(ln => ln.type !== 'boardNode').map(ln => {
                     if (ln.type === 'annotationNode') {
                         return {
                             id: ln.id,
@@ -319,7 +321,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 return { ...base, story_id: (n.data as any).story_id || n.id, splitType: n.data.splitType };
             });
 
-            await api.saveLayout(viewType, season, layoutNodes, edges);
+            await api.saveLayout(viewType, season, [...layoutNodes, ...boardNodes.current], edges);
             return true;
         } catch (err) {
             console.error("레이아웃 저장 실패:", err);
