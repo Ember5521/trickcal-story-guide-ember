@@ -15,16 +15,19 @@ import CurationNode from '@/components/CurationNode';
 import BoardNode from '@/components/BoardNode';
 import YouTubeEmbed from './YouTubeEmbed';
 import ReactFlow, {
+    BaseEdge,
     Background,
     applyEdgeChanges,
     applyNodeChanges,
     Node,
     Edge,
+    EdgeProps,
     Connection,
     addEdge,
     NodeChange,
     EdgeChange,
     MarkerType,
+    getSmoothStepPath,
     ConnectionLineType,
     ConnectionMode,
     useReactFlow,
@@ -43,6 +46,19 @@ const nodeTypes = {
     annotationNode: CurationNode,
     boardNode: BoardNode,
 };
+
+function RequiredChainEdge({ id, style, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition }: EdgeProps) {
+    const [path, centerX, centerY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
+    return <>
+        <BaseEdge id={id} path={path} style={style} />
+        <g transform={`translate(${centerX - 24} ${centerY - 24}) scale(2)`} pointerEvents="none" aria-label="필수 연결 체인">
+            <circle cx="12" cy="12" r="11" fill="#0f172a" stroke="#38bdf8" strokeWidth="1.5" />
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" transform="translate(1.8 1.8) scale(0.85)" fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        </g>
+    </>;
+}
+
+const edgeTypes = { requiredChain: RequiredChainEdge };
 
 /**
  * 타입별 표준 틀 크기.
@@ -475,6 +491,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
 
         // Saved connections
         edges.forEach(e => {
+            if (e.data?.mobileChain === true) return;
             if (!visibleNodeIds.has(e.source) || !visibleNodeIds.has(e.target)) return;
             // 큐레이션은 카드 코너에 물려 있어 선을 그릴 필요가 없다. 다만 관리자는
             // 연결을 지우려면 클릭할 대상이 있어야 하므로 관리자에게만 남긴다.
@@ -509,6 +526,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             // Traversal Map for Full Database Edges
             const fullEdgeMap = new Map<string, string[]>();
             edges.forEach(e => {
+                if (e.data?.mobileChain === true) return;
                 // 여기서 큐레이션 엣지를 빼지 않으면, 방문자 화면에서는 실선을 그리지
                 // 않으므로 "연결이 없다"고 보고 대신 가상 점선을 그려버린다.
                 if (isCurationEdge(e)) return;
@@ -648,8 +666,8 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             const anchorHandle = curationIds.has(re.source) ? re.targetHandle : re.sourceHandle;
             const color = isCuration ? (anchorHandle === 'topRight' ? '#0ea5e9' : '#f59e0b') : required ? '#38bdf8' : activeColor;
 
-            const style: any = { strokeWidth: isCuration ? 2 : required ? 9 : stdWidth, stroke: color, opacity: isCuration ? 0.5 : 1 };
-            if (required) style.filter = 'drop-shadow(0 0 5px #38bdf8)';
+            const style: any = { strokeWidth: isCuration ? 2 : required ? 6 : stdWidth, stroke: color, opacity: isCuration ? 0.5 : 1 };
+            if (required) style.filter = 'drop-shadow(0 0 2px rgba(56, 189, 248, 0.4))';
             if (isCuration) style.strokeDasharray = '6,6';
             else if (!required) style.strokeDasharray = '12,8';
 
@@ -659,9 +677,10 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                 // 앞/뒤 의미가 화면에서 멋대로 바뀐다.
                 sourceHandle: isCuration ? re.sourceHandle : bS,
                 targetHandle: isCuration ? re.targetHandle : bT,
-                type: 'smoothstep',
+                type: required ? 'requiredChain' : 'smoothstep',
                 animated: !isCuration && !required,
-                markerEnd: {
+                markerStart: undefined,
+                markerEnd: required ? undefined : {
                     type: MarkerType.ArrowClosed,
                     color,
                     width: isCuration ? 6 : stdMarkerSize,
@@ -2009,6 +2028,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     onNodesDelete={onNodesDelete}
                     onConnect={onConnect} onEdgeClick={onEdgeClick} onEdgeDoubleClick={onEdgeDoubleClick}
                     nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
                     onNodeClick={(e, node) => onNodeClick(e, node)}
                     minZoom={fromDisplayZoom(0.6)} maxZoom={fromDisplayZoom(1.5)}
                     panOnScroll={false} zoomOnScroll={false} zoomOnPinch={false} zoomOnDoubleClick={false}

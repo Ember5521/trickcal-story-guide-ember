@@ -4,12 +4,13 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet, RotateCcw
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet, RotateCcw, Link2
 } from 'lucide-react';
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
 import { canUndo, createUndoStack, layoutSignature, record, undo as popUndo } from '../lib/undo.mjs';
 import { resolveAnchor } from '../lib/curation.mjs';
+import { mobileChainPairs, toggleMobileChain } from '../lib/mobileChains.mjs';
 import YouTubeEmbed from './YouTubeEmbed';
 import { CurationText } from './CurationNode';
 import { getSpecialStoryType, isSpecialStoryType, SpecialStoryIcon, type SpecialStoryType } from './SpecialStoryType';
@@ -51,6 +52,8 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [nodes, setNodes] = useState<Node[]>([]);
     const boardNodes = useRef<api.LayoutNode[]>([]);
     const [edges, setEdges] = useState<any[]>([]);
+    const [chainMode, setChainMode] = useState(false);
+    const [chainStartId, setChainStartId] = useState<string | null>(null);
 
     // Load saved settings from localStorage
     const savedSettings = useMemo(() => {
@@ -296,7 +299,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         localStorage.setItem('user_story_memo', memoText);
     }, [memoText]);
 
-    const syncToCloud = async (newNodes: Node[]) => {
+    const syncToCloud = async (newNodes: Node[], newEdges = edges) => {
         if (!isAdmin) return false;
         try {
             // Convert to layout format
@@ -321,7 +324,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 return { ...base, story_id: (n.data as any).story_id || n.id, splitType: n.data.splitType };
             });
 
-            await api.saveLayout(viewType, season, [...layoutNodes, ...boardNodes.current], edges);
+            await api.saveLayout(viewType, season, [...layoutNodes, ...boardNodes.current], newEdges);
             return true;
         } catch (err) {
             console.error("레이아웃 저장 실패:", err);
@@ -333,34 +336,39 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     // 되돌리기 (관리자 전용). PC와 같은 규칙 — src/lib/undo.mjs.
     // 모바일은 드래그 중간 상태를 setNodes 하지 않으므로(손 뗄 때 한 번) 제스처 묶음이 필요 없다.
     // 자동 저장 디바운스도 없어서 되돌린 뒤 직접 올린다.
-    const undoStack = useRef(createUndoStack<Node[]>());
+    const undoStack = useRef(createUndoStack<{ nodes: Node[]; edges: any[] }>());
     const [undoAvailable, setUndoAvailable] = useState(false);
     // 관리자 진입 시점의 배치. "변경 취소하고 나가기"가 여기로 되돌린다.
-    const adminBaseRef = useRef<Node[] | null>(null);
+    const adminBaseRef = useRef<{ nodes: Node[]; edges: any[] } | null>(null);
 
     useEffect(() => {
         if (!isAdmin || !isLoaded || nodes.length === 0) return;
-        if (!adminBaseRef.current) adminBaseRef.current = nodes;
-        record(undoStack.current, nodes, (s) => layoutSignature(s));
+        if (!adminBaseRef.current) adminBaseRef.current = { nodes, edges };
+        record(undoStack.current, { nodes, edges }, (s) => layoutSignature(s.nodes, s.edges));
         setUndoAvailable(canUndo(undoStack.current));
-    }, [nodes, isAdmin, isLoaded]);
+    }, [nodes, edges, isAdmin, isLoaded]);
 
     useEffect(() => {
         undoStack.current = createUndoStack();
         adminBaseRef.current = null;
         setUndoAvailable(false);
+        setChainStartId(null);
+        setChainMode(false);
     }, [season, viewType]);
 
     const handleUndo = async () => {
         const prev = popUndo(undoStack.current);
         setUndoAvailable(canUndo(undoStack.current));
         if (!prev) return;
-        setNodes(prev);
-        await syncToCloud(prev);
+        setNodes(prev.nodes);
+        setEdges(prev.edges);
+        await syncToCloud(prev.nodes, prev.edges);
     };
 
     const leaveAdmin = () => {
         setIsAdmin(false);
+        setChainMode(false);
+        setChainStartId(null);
         api.logout();
         undoStack.current = createUndoStack();
         adminBaseRef.current = null;
@@ -379,8 +387,9 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         )) return;
 
         if (base) {
-            setNodes(base);
-            const ok = await syncToCloud(base);
+            setNodes(base.nodes);
+            setEdges(base.edges);
+            const ok = await syncToCloud(base.nodes, base.edges);
             if (!ok && !confirm("되돌린 배치를 저장하지 못했습니다. 그래도 나갈까요?")) return;
         }
         leaveAdmin();
@@ -429,6 +438,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const ROW_HEIGHT = 70;
     const ROW_GAP = 6;
     const SLOT_UNIT = 80; // Slightly tighter slot unit
+    const BOARD_HEIGHT = season >= 2 ? ROW_HEIGHT + ROW_GAP : 0;
 
     // Layout Logic (Slot-based Engine)
     const layoutInfo = useMemo(() => {
@@ -450,7 +460,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 ...node,
                 rowIndex,
                 colIndex,
-                renderTop: rowIndex * (ROW_HEIGHT + ROW_GAP)
+                renderTop: rowIndex * (ROW_HEIGHT + ROW_GAP) + (colIndex === 1 ? BOARD_HEIGHT : 0)
             };
         });
 
@@ -474,10 +484,30 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
         return {
             nodes: slottedNodes,
             curationByAnchor,
-            totalHeight: (maxRow + 10) * (ROW_HEIGHT + ROW_GAP) + 400,
+            totalHeight: (maxRow + 10) * (ROW_HEIGHT + ROW_GAP) + 400 + BOARD_HEIGHT,
             maxRow
         };
-    }, [nodes, edges]);
+    }, [nodes, edges, season]);
+
+    const chainPairs = useMemo(
+        () => mobileChainPairs(layoutInfo.nodes, edges), [layoutInfo.nodes, edges]);
+    const chainedNodeIds = useMemo(() => new Set<string>(chainPairs.flatMap(({ source, target }) => [source.id, target.id])), [chainPairs]);
+
+    const handleChainTap = async (id: string) => {
+        if (!chainStartId) { setChainStartId(id); return; }
+        setChainStartId(null);
+        if (chainStartId === id) return;
+        const first = layoutInfo.nodes.find(n => n.id === chainStartId);
+        const second = layoutInfo.nodes.find(n => n.id === id);
+        if (!first || !second) return;
+        try {
+            const nextEdges = toggleMobileChain(edges, layoutInfo.nodes, first, second, `mc_${Date.now()}`);
+            setEdges(nextEdges);
+            await syncToCloud(nodes, nextEdges);
+        } catch (error) {
+            alert(error instanceof Error ? error.message : '체인을 연결하지 못했습니다.');
+        }
+    };
 
     const matchedNodeIds = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
@@ -658,7 +688,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     };
 
     const handleDragStart = (id: string, e: React.PointerEvent) => {
-        if (!isAdmin) return;
+        if (!isAdmin || chainMode) return;
         const rect = e.currentTarget.getBoundingClientRect();
         setDraggedId(id);
         setDragOffset({
@@ -686,7 +716,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
 
         // Calculate Target Logical Indices for order check
         const c = dropX >= scrollRect.width * 0.6 ? 1 : 0;
-        const r = Math.max(0, Math.floor(dropY / (ROW_HEIGHT + ROW_GAP)));
+        const r = Math.max(0, Math.floor((dropY - (c === 1 ? BOARD_HEIGHT : 0)) / (ROW_HEIGHT + ROW_GAP)));
 
         const node = nodes.find(n => n.id === draggedId);
         if (!node) { setDraggedId(null); return; }
@@ -818,6 +848,15 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         title="되돌리기 (배치만)"
                                     >
                                         <RotateCcw size={13} />
+                                    </button>
+                                    <button
+                                        onClick={() => { setChainMode(!chainMode); setChainStartId(null); }}
+                                        className={`p-1.5 rounded-lg border ${chainMode ? 'bg-sky-500 text-slate-950 border-sky-300' : 'bg-slate-800 text-sky-400 border-slate-700'}`}
+                                        title="체인 연결: 시작 노드와 끝 노드를 탭하세요"
+                                        aria-label="체인 연결 모드"
+                                        aria-pressed={chainMode}
+                                    >
+                                        <Link2 size={13} />
                                     </button>
                                     <button
                                         onClick={() => {
@@ -955,6 +994,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 </div>
             </header>
 
+            {isAdmin && chainMode && (
+                <div className="z-20 flex items-center justify-between bg-sky-950 px-3 py-1.5 text-xs text-sky-100">
+                    <span>{chainStartId ? '끝 노드를 탭하세요' : '시작 노드와 끝 노드를 탭하세요'}</span>
+                    <button onClick={() => { setChainMode(false); setChainStartId(null); }} aria-label="체인 연결 취소"><X size={14} /></button>
+                </div>
+            )}
+
             {/* Unified Scrollable Area (Explicit 3:2 Split) */}
             <div
                 ref={scrollRef}
@@ -967,6 +1013,13 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     {/* 3:2 Divider Line (60%) */}
                     <div className="absolute left-[60%] top-0 bottom-0 w-px bg-white/10" />
 
+                    {BOARD_HEIGHT > 0 && <div className="absolute z-10 left-[60%] top-0 w-[40%] p-1" style={{ height: BOARD_HEIGHT }}>
+                        <div className="h-full rounded-xl border border-sky-400/50 bg-slate-900/95 px-2 py-1 shadow-lg shadow-sky-950/40">
+                            <div className="mb-0.5 flex items-center gap-1 text-[10px] font-black text-sky-300"><Link2 size={12} /> 테마극장 안내</div>
+                            <p className="text-[9px] leading-[11px] text-slate-200 break-keep">체인으로 이어진 순서대로 시청<br />표시가 없으면 자유롭게 시청</p>
+                        </div>
+                    </div>}
+
                     {/* Render Invisible Grid Slots (Visible in Admin Mode) */}
                     {isAdmin && Array.from({ length: (layoutInfo.maxRow + 15) * 2 }).map((_, i) => {
                         const r = Math.floor(i / 2);
@@ -976,7 +1029,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                 key={`slot-${i}`}
                                 className="absolute border border-dashed border-white/5 pointer-events-none"
                                 style={{
-                                    top: `${r * (ROW_HEIGHT + ROW_GAP)}px`,
+                                    top: `${r * (ROW_HEIGHT + ROW_GAP) + (c === 1 ? BOARD_HEIGHT : 0)}px`,
                                     left: c === 1 ? '60%' : '0',
                                     width: c === 1 ? '40%' : '60%',
                                     height: `${ROW_HEIGHT}px`,
@@ -985,11 +1038,25 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                         );
                     })}
 
+                    {chainPairs.map(({ source, target }) => {
+                        const sourceX = source.colIndex === 1 ? 80 : 30;
+                        const targetX = target.colIndex === 1 ? 80 : 30;
+                        const centerY = source.rowIndex === target.rowIndex
+                            ? source.renderTop + ROW_HEIGHT / 2
+                            : (source.renderTop + ROW_HEIGHT + target.renderTop) / 2;
+                        return <span
+                            key={`chain-${source.id}-${target.id}`}
+                            className="absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-300 bg-slate-950 p-1 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.7)] pointer-events-none"
+                            style={{ left: `${(sourceX + targetX) / 2}%`, top: `${centerY}px` }}
+                            title="이어 보기"
+                        ><Link2 size={14} /></span>;
+                    })}
+
                     {layoutInfo.nodes.map((node) => {
                         const { colIndex, renderTop } = node;
                         const isRight = colIndex === 1;
                         const isDragging = draggedId === node.id;
-                        const isDimmed = !isAdmin && node.data.type !== 'annotation' && (node.data.importance || 0) < importanceFilter;
+                        const isDimmed = !isAdmin && !chainedNodeIds.has(node.id) && node.data.type !== 'annotation' && (node.data.importance || 0) < importanceFilter;
                         const specialType = getSpecialStoryType(node.data.type);
 
                         // Drag override
@@ -1012,16 +1079,19 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             <div
                                 key={node.id}
                                 id={`node-${node.id}`}
-                                className={`absolute transition-all select-none ${isDragging ? '' : 'duration-700 ease-[cubic-bezier(0.2,1,0.2,1)]'} ${isAdmin ? 'touch-none' : 'touch-pan-y active:scale-[0.98]'} ${isDimmed ? (node.data.watched ? 'opacity-40 pointer-events-none' : 'opacity-20 grayscale pointer-events-none') : ''}`}
+                                className={`absolute transition-all select-none ${isDragging ? '' : 'duration-700 ease-[cubic-bezier(0.2,1,0.2,1)]'} ${isAdmin && !chainMode ? 'touch-none' : 'touch-pan-y active:scale-[0.98]'} ${isDimmed ? (node.data.watched ? 'opacity-40 pointer-events-none' : 'opacity-20 grayscale pointer-events-none') : ''}`}
                                 onPointerDown={(e) => handleDragStart(node.id, e)}
-                                onClick={() => !isAdmin && !isDimmed && setSelectedDetailNode(node)}
+                                onClick={() => {
+                                    if (isAdmin && chainMode) handleChainTap(node.id);
+                                    else if (!isAdmin && !isDimmed) setSelectedDetailNode(node);
+                                }}
                                 style={{
                                     ...dragStyle,
                                     height: `${ROW_HEIGHT}px`,
                                     padding: '4px'
                                 }}
                             >
-                                <div className={`h-full group relative transition-all ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800 rounded-2xl' : ''} ${navHighlightedNodeId === node.id ? 'ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)] rounded-2xl animate-pulse z-10' : matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] rounded-2xl' : ''}`}>
+                                <div className={`h-full group relative transition-all ${isDragging ? 'ring-2 ring-indigo-500 shadow-2xl bg-slate-800 rounded-2xl' : ''} ${chainStartId === node.id ? 'ring-4 ring-sky-400 rounded-2xl shadow-[0_0_20px_rgba(56,189,248,0.7)]' : ''} ${navHighlightedNodeId === node.id ? 'ring-4 ring-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.8)] rounded-2xl animate-pulse z-10' : matchedNodeIds.includes(node.id) ? 'ring-2 ring-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] rounded-2xl' : ''}`}>
                                 <div className={`flex items-center h-full bg-slate-900/40 border rounded-xl overflow-hidden backdrop-blur-md transition-all duration-500
                                     ${node.data.watched ? 'opacity-60 bg-emerald-500/5 ring-1 ring-emerald-500/20' : 'hover:bg-slate-800/60'}
                                     ${specialType ? `${specialType.mobileBorder} ${specialType.glow}` : node.data.watched ? 'border-emerald-500/50' : 'border-slate-800/40 shadow-lg'}`}>
@@ -1101,7 +1171,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                                 {isAdmin && (
                                                     <button
                                                         onPointerDown={(e) => e.stopPropagation()}
-                                                        onClick={async (e) => { e.stopPropagation(); if (confirm("삭제할까요?")) { const up = nodes.filter(n => n.id !== node.id); setNodes(up); await syncToCloud(up); } }}
+                                                        onClick={async (e) => { e.stopPropagation(); if (confirm("삭제할까요?")) { const up = nodes.filter(n => n.id !== node.id); const nextEdges = edges.filter(edge => edge.source !== node.id && edge.target !== node.id); setNodes(up); setEdges(nextEdges); await syncToCloud(up, nextEdges); } }}
                                                         className="text-red-400/50 hover:text-red-400 transition-colors pointer-events-auto p-1"
                                                     >
                                                         <Trash2 size={12} />
@@ -1220,8 +1290,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     onClick={() => {
                                         if (confirm("이 노드를 삭제하시겠습니까? (이 배치에서만 사라지고 마스터 데이터는 유지됩니다)")) {
                                             const up = nodes.filter(n => n.id !== editingNode.id);
+                                            const nextEdges = edges.filter(edge => edge.source !== editingNode.id && edge.target !== editingNode.id);
                                             setNodes(up);
-                                            syncToCloud(up);
+                                            setEdges(nextEdges);
+                                            syncToCloud(up, nextEdges);
                                             setShowForm(false);
                                             setEditingNode(null);
                                         }
@@ -1393,6 +1465,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             <p className="text-[10px] leading-relaxed text-slate-400">
                                 <b className="text-slate-300">가이드 안내</b><br />
                                 • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
+                                • 체인으로 연결된 테마극장은 메인 스토리와 이어서 시청하세요.<br />
                                 • 본 사이트는 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                             </p>
                         </div>
