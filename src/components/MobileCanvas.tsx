@@ -1013,10 +1013,10 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     {/* 3:2 Divider Line (60%) */}
                     <div className="absolute left-[60%] top-0 bottom-0 w-px bg-white/10" />
 
-                    {BOARD_HEIGHT > 0 && <div className="absolute z-10 left-[60%] top-0 w-[40%] p-1" style={{ height: BOARD_HEIGHT }}>
-                        <div className="h-full rounded-xl border border-sky-400/50 bg-slate-900/95 px-2 py-1 shadow-lg shadow-sky-950/40">
-                            <div className="mb-0.5 flex items-center gap-1 text-[10px] font-black text-sky-300"><Link2 size={12} /> 테마극장 안내</div>
-                            <p className="text-[9px] leading-[11px] text-slate-200 break-keep">체인으로 이어진 순서대로 시청<br />표시가 없으면 자유롭게 시청</p>
+                    {BOARD_HEIGHT > 0 && <div className="absolute z-10 left-0 top-0 w-full p-1" style={{ height: BOARD_HEIGHT }}>
+                        <div className="flex h-full flex-col justify-center rounded-xl border border-sky-400/50 bg-slate-900/95 px-3 py-1 shadow-lg shadow-sky-950/40">
+                            <div className="mb-0.5 flex items-center gap-1 text-[11px] font-black text-sky-300"><Link2 size={14} /> 테마극장 안내</div>
+                            <p className="text-[10px] leading-[14px] text-slate-200 break-keep">체인으로 이어진 순서대로 시청<br />표시가 없으면 자유롭게 시청</p>
                         </div>
                     </div>}
 
