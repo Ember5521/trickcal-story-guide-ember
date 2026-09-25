@@ -438,7 +438,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const ROW_HEIGHT = 70;
     const ROW_GAP = 6;
     const SLOT_UNIT = 80; // Slightly tighter slot unit
-    const BOARD_HEIGHT = season >= 2 ? ROW_HEIGHT + ROW_GAP : 0;
+    const BOARD_HEIGHT = viewType === 'recommended' && season >= 2 ? ROW_HEIGHT + ROW_GAP : 0;
 
     // Layout Logic (Slot-based Engine)
     const layoutInfo = useMemo(() => {
@@ -490,7 +490,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     }, [nodes, edges, season]);
 
     const chainPairs = useMemo(
-        () => mobileChainPairs(layoutInfo.nodes, edges), [layoutInfo.nodes, edges]);
+        () => viewType === 'recommended' ? mobileChainPairs(layoutInfo.nodes, edges) : [], [layoutInfo.nodes, edges, viewType]);
     const chainedNodeIds = useMemo(() => new Set<string>(chainPairs.flatMap(({ source, target }) => [source.id, target.id])), [chainPairs]);
 
     const handleChainTap = async (id: string) => {
@@ -849,7 +849,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                     >
                                         <RotateCcw size={13} />
                                     </button>
-                                    <button
+                                    {viewType === 'recommended' && <button
                                         onClick={() => { setChainMode(!chainMode); setChainStartId(null); }}
                                         className={`p-1.5 rounded-lg border ${chainMode ? 'bg-sky-500 text-slate-950 border-sky-300' : 'bg-slate-800 text-sky-400 border-slate-700'}`}
                                         title="체인 연결: 시작 노드와 끝 노드를 탭하세요"
@@ -857,7 +857,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                                         aria-pressed={chainMode}
                                     >
                                         <Link2 size={13} />
-                                    </button>
+                                    </button>}
                                     <button
                                         onClick={() => {
                                             fetchMasterStories();
@@ -994,7 +994,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 </div>
             </header>
 
-            {isAdmin && chainMode && (
+            {isAdmin && viewType === 'recommended' && chainMode && (
                 <div className="z-20 flex items-center justify-between bg-sky-950 px-3 py-1.5 text-xs text-sky-100">
                     <span>{chainStartId ? '끝 노드를 탭하세요' : '시작 노드와 끝 노드를 탭하세요'}</span>
                     <button onClick={() => { setChainMode(false); setChainStartId(null); }} aria-label="체인 연결 취소"><X size={14} /></button>
@@ -1465,7 +1465,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             <p className="text-[10px] leading-relaxed text-slate-400">
                                 <b className="text-slate-300">가이드 안내</b><br />
                                 • 본 스토리 가이드는 공식 가이드가 아니며, 참고용 자료입니다.<br />
-                                • 체인으로 연결된 테마극장은 메인 스토리와 이어서 시청하세요.<br />
+                                {viewType === 'recommended' && <>• 체인으로 연결된 테마극장은 메인 스토리와 이어서 시청하세요.<br /></>}
                                 • 본 사이트는 문제가 발생할 경우 예고 없이 운영이 중단될 수 있으며, 모든 영상 및 이미지의 저작권은 Epid Games에 귀속됩니다.
                             </p>
                         </div>
