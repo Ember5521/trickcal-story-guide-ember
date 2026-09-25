@@ -384,11 +384,18 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
         }
     }, []);
 
+    const matchedNodeIds = useMemo(() => {
+        const query = searchQuery.toLowerCase();
+        if (query.length < 2) return [];
+        return nodes.filter(node => node.type === 'storyNode' &&
+            (node.data.importance || 0) >= importanceFilter &&
+            (node.data.label?.toLowerCase().includes(query) || node.data.protagonist?.toLowerCase().includes(query))
+        ).map(node => node.id);
+    }, [nodes, searchQuery, importanceFilter]);
+    const matchedNodeIdSet = useMemo(() => new Set(matchedNodeIds), [matchedNodeIds]);
+
     // Filtered Nodes
     const displayNodes = useMemo(() => {
-        const query = searchQuery.toLowerCase();
-        const isSearchActive = query.length >= 2;
-
         const byId = new Map(nodes.map(n => [n.id, n]));
         const isStory = (id: string) => byId.get(id)?.type === 'storyNode';
 
@@ -397,11 +404,6 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
             // Curation nodes (annotation) are always shown or treated as importance 2
             const isBelowImportance = node.type !== 'annotationNode' && node.type !== 'boardNode' && (node.data.importance || 0) < importanceFilter;
             let isHidden = isBelowImportance;
-
-            const isMatched = isSearchActive && node.type === 'storyNode' && (
-                node.data.label?.toLowerCase().includes(query) ||
-                (node.data.protagonist?.toLowerCase().includes(query))
-            );
 
             // 큐레이션은 앵커 카드의 코너에 물린다. 원(96px) 중심을 카드 모서리에
             // 맞추면 원의 1/4 이 카드 안으로 들어간다. 좌표는 앵커에서 파생되므로
@@ -437,17 +439,13 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     isAdmin,
                     anchorSide: side,
                     unanchored: node.type === 'annotationNode' && !side,
-                    highlighted: isMatched && !isHidden,
+                    highlighted: matchedNodeIdSet.has(node.id),
                     isRecentlyNavigated: navHighlightedNodeId === node.id,
                     onPlayVideo: handlePlayVideo
                 }
             };
         });
-    }, [nodes, edges, searchQuery, isAdmin, handlePlayVideo, navHighlightedNodeId, importanceFilter]);
-
-    const matchedNodeIds = useMemo(() => {
-        return displayNodes.filter(node => node.data.highlighted).map(node => node.id);
-    }, [displayNodes]);
+    }, [nodes, edges, matchedNodeIdSet, isAdmin, handlePlayVideo, navHighlightedNodeId, importanceFilter]);
 
     // Master Library Search Filtering
     const filteredMasterStories = useMemo(() => {
