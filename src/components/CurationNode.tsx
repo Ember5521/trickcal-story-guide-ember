@@ -26,9 +26,10 @@ const CurationImage = ({ src }: { src: string }) => {
             <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-                className="nodrag block my-2 rounded-xl overflow-hidden border-2 border-indigo-500/40 hover:border-indigo-400 transition-colors cursor-zoom-in"
+                className="nodrag block w-full max-w-md my-2 rounded-xl overflow-hidden border-2 border-indigo-500/40 hover:border-indigo-400 transition-colors cursor-zoom-in"
             >
-                <img src={src} alt="참고자료" className="block max-h-48 w-auto" loading="lazy" />
+                {/* 참고 이미지는 세로로 긴 것이 많다. 썸네일은 위쪽만 잘라 보여 주고 전체는 라이트박스에서 본다. */}
+                <img src={src} alt="참고자료" className="block w-full h-36 object-cover object-top" loading="lazy" />
                 <span className="block px-3 py-1.5 text-[12px] font-bold text-indigo-300 bg-indigo-950/60 text-left">눌러서 크게 보기</span>
             </button>
             {open && typeof document !== 'undefined' && createPortal(
