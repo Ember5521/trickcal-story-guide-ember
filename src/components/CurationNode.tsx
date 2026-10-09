@@ -6,18 +6,59 @@ import { Lightbulb } from 'lucide-react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { StoryNodeData } from './StoryNode';
 
+const basePath = process.env.NODE_ENV === 'production' ? '/trickcal-story-guide-ember' : '';
+
+// 본문 속 `/images/...` 는 public/ 의 정적 파일이다. basePath 는 빌드마다 달라서
+// 본문에는 넣지 않고 여기서 붙인다.
+const resolveSrc = (ref: string) => (ref.startsWith('/') ? `${basePath}${ref}` : ref);
+const isImageRef = (ref: string) => /\.(png|jpe?g|webp|gif)(\?|$)/i.test(ref);
+
 /**
- * 큐레이션 본문. 안에 섞인 URL 만 링크로 만든다.
+ * 본문 속 이미지. 썸네일을 누르면 화면 정중앙에 원본을 띄운다.
+ * 큐레이션 노트 창 자체가 오버레이라 그 위로 올라가야 하고, 바깥 클릭이 노트 창
+ * 닫기로 번지지 않게 이벤트를 여기서 끊는다 (포탈이어도 React 이벤트는 트리를 따라 올라간다).
+ */
+const CurationImage = ({ src }: { src: string }) => {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <>
+            <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+                className="nodrag block my-2 rounded-xl overflow-hidden border-2 border-indigo-500/40 hover:border-indigo-400 transition-colors cursor-zoom-in"
+            >
+                <img src={src} alt="참고자료" className="block max-h-48 w-auto" loading="lazy" />
+                <span className="block px-3 py-1.5 text-[12px] font-bold text-indigo-300 bg-indigo-950/60 text-left">눌러서 크게 보기</span>
+            </button>
+            {open && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/90 cursor-zoom-out animate-in fade-in duration-150"
+                    onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+                    onWheel={(e) => e.stopPropagation()}
+                >
+                    <img src={src} alt="참고자료" className="max-w-full max-h-full object-contain" />
+                </div>,
+                document.body,
+            )}
+        </>
+    );
+};
+
+/**
+ * 큐레이션 본문. 안에 섞인 URL 은 링크로, 이미지 주소(`/images/...` 포함)는 썸네일로 만든다.
  * PC 노드 툴팁과 모바일 노트 시트가 같은 렌더링을 써야 해서 밖으로 뺐다.
  */
 export const CurationText = ({ content }: { content?: string }) => {
     const text = content || '배치 의도가 기록되지 않았습니다.';
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const urlRegex = /(https?:\/\/[^\s]+|\/images\/[^\s]+)/g;
 
     return (
         <>
             {text.split(urlRegex).map((part, i) =>
-                part.match(urlRegex) ? (
+                !part.match(urlRegex) ? part
+                : isImageRef(part) ? <CurationImage key={i} src={resolveSrc(part)} />
+                : (
                     <a
                         key={i}
                         href={part}
@@ -28,7 +69,7 @@ export const CurationText = ({ content }: { content?: string }) => {
                     >
                         {part}
                     </a>
-                ) : part,
+                ),
             )}
         </>
     );
