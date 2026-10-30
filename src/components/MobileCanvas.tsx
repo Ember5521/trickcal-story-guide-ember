@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
     Search, Info, Youtube, Play, X, Settings, StickyNote, ChevronDown,
     Plus, Edit2, Trash2, Save, Upload, Image as ImageIcon,
-    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet, RotateCcw, Link2
+    Layout, Monitor, CheckCircle, Shield, ChevronLeft, ChevronRight, Library, Bell, TriangleAlert, MapPin, Lightbulb, FileSpreadsheet, RotateCcw, Link2, Gamepad2
 } from 'lucide-react';
 import * as api from '../lib/api';
 import { imageUrl } from '../lib/api';
@@ -13,6 +13,7 @@ import { resolveAnchor } from '../lib/curation.mjs';
 import { mobileChainPairs, toggleMobileChain } from '../lib/mobileChains.mjs';
 import YouTubeEmbed from './YouTubeEmbed';
 import { CurationText } from './CurationNode';
+import FanGamesModal from './FanGamesModal';
 import { getSpecialStoryType, isSpecialStoryType, SpecialStoryIcon, type SpecialStoryType } from './SpecialStoryType';
 
 const isProd = process.env.NODE_ENV === 'production';
@@ -105,6 +106,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
     const [showUpdateLog, setShowUpdateLog] = useState(false);
+    const [showFanGames, setShowFanGames] = useState(false);
     const [updateLogContent, setUpdateLogContent] = useState('');
     const [lastUpdateAt, setLastUpdateAt] = useState<string | null>(null);
     const [hasNewUpdate, setHasNewUpdate] = useState(false);
@@ -276,23 +278,27 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                 setShowMemo(false);
             } else if (noteNode) {
                 setNoteNode(null);
+            } else if (showFanGames) {
+                setShowFanGames(false);
+            } else if (showUpdateLog) {
+                setShowUpdateLog(false);
             }
         };
 
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
-    }, [activeVideoUrl, selectedDetailNode, showInfo, showMemo, noteNode]);
+    }, [activeVideoUrl, selectedDetailNode, showInfo, showMemo, noteNode, showFanGames, showUpdateLog]);
 
     // Push states to history to enable back button closing
     useEffect(() => {
         // If any modal becomes open, push a state
-        const anyOpen = !!selectedDetailNode || !!activeVideoUrl || showInfo || showMemo || !!noteNode;
+        const anyOpen = !!selectedDetailNode || !!activeVideoUrl || showInfo || showMemo || !!noteNode || showFanGames || showUpdateLog;
         if (anyOpen) {
             // Check if we already pushed for this state to avoid loops
             // Using a simple state check
             window.history.pushState({ modal: true }, '');
         }
-    }, [!!selectedDetailNode, !!activeVideoUrl, showInfo, showMemo, !!noteNode]);
+    }, [!!selectedDetailNode, !!activeVideoUrl, showInfo, showMemo, !!noteNode, showFanGames, showUpdateLog]);
 
     // Save Memo
     useEffect(() => {
@@ -810,27 +816,25 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             onPointerLeave={cancelAdminPress}
                             onPointerCancel={cancelAdminPress}
                             onContextMenu={e => e.preventDefault()}
-                            className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95 select-none touch-none"
+                            className={`p-2 rounded-xl border transition-all active:scale-95 select-none touch-none relative ${hasNewUpdate
+                                ? 'bg-lime-500/20 border-lime-500/50 text-lime-400 shadow-[0_0_15px_rgba(163,230,53,0.3)]'
+                                : 'bg-slate-800/80 border-slate-700 text-slate-400'
+                                }`}
                         >
                             <Info size={16} />
+                            {hasNewUpdate && (
+                                <span className="absolute -top-1 -right-1 w-2 h-2 bg-lime-500 rounded-full border border-slate-900 animate-bounce" />
+                            )}
                         </button>
                         <button onClick={onToggleView} className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95" title="PC View">
                             <Monitor size={16} />
                         </button>
                         <button
-                            onClick={() => {
-                                setShowUpdateLog(true);
-                                if (hasNewUpdate) {
-                                    setHasNewUpdate(false);
-                                    localStorage.setItem('last_read_update_at', lastUpdateAt || new Date().toISOString());
-                                }
-                            }}
-                            className={`p-2 rounded-xl border transition-all active:scale-95 ${hasNewUpdate
-                                ? 'bg-lime-500/20 border-lime-500/50 text-lime-400 shadow-[0_0_15px_rgba(163,230,53,0.3)]'
-                                : 'bg-slate-800/80 border-slate-700 text-slate-400'
-                                }`}
+                            onClick={() => setShowFanGames(true)}
+                            className="p-2 bg-slate-800/80 rounded-xl text-slate-400 border border-slate-700 transition-all active:scale-95"
+                            title="팬게임"
                         >
-                            <Bell size={16} className={hasNewUpdate ? 'animate-pulse' : ''} />
+                            <Gamepad2 size={16} />
                         </button>
                     </div>
 
@@ -1465,6 +1469,26 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                             </button>
                         </div>
 
+                        {/* Update Log Button */}
+                        <button
+                            onClick={() => {
+                                setShowInfo(false);
+                                localStorage.setItem('intro_completed', 'true');
+                                setShowUpdateLog(true);
+                                if (hasNewUpdate) {
+                                    setHasNewUpdate(false);
+                                    localStorage.setItem('last_read_update_at', lastUpdateAt || new Date().toISOString());
+                                }
+                            }}
+                            className={`w-full py-3 rounded-xl border text-[13px] font-bold transition-all active:scale-95 flex items-center justify-center gap-2 mb-4 ${hasNewUpdate
+                                ? 'bg-lime-500/20 border-lime-500/50 text-lime-400'
+                                : 'bg-slate-800/50 border-slate-700 text-slate-300'
+                                }`}
+                        >
+                            <Bell size={16} className={hasNewUpdate ? 'animate-pulse' : ''} />
+                            업데이트 노트 보기
+                        </button>
+
                         {/* Guide Info */}
                         <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700/50">
                             <p className="text-[10px] leading-relaxed text-slate-400">
@@ -1737,6 +1761,7 @@ export default function MobileCanvas({ onToggleView, isMobileView }: { onToggleV
                     }} />
                 </div>
             )}
+            {showFanGames && <FanGamesModal isAdmin={isAdmin} mobile onClose={() => setShowFanGames(false)} />}
             {/* Developer Update Log Modal */}
             {showUpdateLog && (
                 <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[600] flex flex-col animate-in fade-in duration-300">

@@ -111,6 +111,19 @@ export interface AppUpdate {
     updated_at: string;
 }
 
+export interface FanGame {
+    id: string;
+    title: string;
+    url: string;
+    description: string;
+    image: string;
+}
+
+// 팬게임 목록은 story_layouts 의 이 한 행에 nodes 로 저장한다. Worker 를 바꾸지 않기 위함이며,
+// 지도 레이아웃이 아니므로 뷰 선택지에는 나타나지 않는다.
+const FAN_GAMES_VIEW = 'fangames';
+const FAN_GAMES_SEASON = 0;
+
 // ---------------------------------------------------------------- 공개 읽기
 
 /** 레이아웃과 그것이 참조하는 스토리를 한 번에 받는다 (Worker가 조인해서 보냄). */
@@ -118,6 +131,9 @@ export const fetchLayout = (view: string, season: number): Promise<LayoutRespons
     call<LayoutResponse>(`/api/layout?view=${encodeURIComponent(view)}&season=${season}`);
 
 export const fetchUpdates = (): Promise<AppUpdate[]> => call<AppUpdate[]>('/api/updates');
+
+export const fetchFanGames = async (): Promise<FanGame[]> =>
+    (await fetchLayout(FAN_GAMES_VIEW, FAN_GAMES_SEASON)).nodes as unknown as FanGame[];
 
 // ---------------------------------------------------------------- 관리자
 
@@ -144,6 +160,9 @@ export const saveStory = (story: Partial<MasterStory> & { id?: string }): Promis
 
 export const saveUpdateLog = (content: string): Promise<{ ok: true }> =>
     call('/api/update-log', { method: 'POST', body: JSON.stringify({ content }) }, true);
+
+export const saveFanGames = (items: FanGame[]): Promise<{ ok: true }> =>
+    saveLayout(FAN_GAMES_VIEW, FAN_GAMES_SEASON, items, []);
 
 export async function uploadImage(file: File, season: number): Promise<string> {
     const form = new FormData();

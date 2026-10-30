@@ -94,12 +94,12 @@ D1 (SQLite). 스키마는 `data/schema.sql`, 원본 백업은 `data/backup/*.jso
 
 - **`master_stories`** — 에피소드 자체. `label`, `type`, `image`, `youtube_url`, `full_video_url`, `protagonist`, `part_label`, `split_type`, `importance`, `content`. 모든 뷰가 공유한다.
 - **`story_layouts`** — `(view_type, season)` 당 한 행. `nodes`/`edges` 는 JSON 문자열(TEXT). 레이아웃 노드는 `id`, `story_id`, `x/y/w/h`, 모바일 전용 좌표 `m_x`/`m_y`, `splitType` 만 담는다.
-- **`app_updates`** — 앱 내 알림 벨에 뜨는 변경 로그. 한 행(`id = 1`).
+- **`app_updates`** — Information 창의 업데이트 노트에 뜨는 변경 로그. 한 행(`id = 1`).
 - **`login_attempts`** — IP 별 로그인 실패 카운터.
 
 **모바일은 PC 좌표(`x`/`y`)를 절대 쓰지 않는다.** 모바일 편집 폼의 Column Placement 와 Grid Y 는 모바일 격자 값이라 `m_x`/`m_y` 로만 가야 한다. 예전에는 이 값을 그대로 `position` 에 넣어서, 모바일에서 위치를 건드릴 때마다 PC 좌표가 덮였다. 모바일에서 만든 노드가 `x = 0` 으로 저장돼 `release/3` 이 통째로 빈 화면이 된 적이 있다 — PC 는 `translateExtent` 를 최소/최대 좌표로 잡기 때문에 노드 하나가 수만 px 떨어져 있으면 지도가 빈 곳을 비춘다. `scripts/verify-layouts.mjs` 가 이걸 잡는다.
 
-`view_type` 은 `recommended | release | elflix`, `season` 은 1~3. (`chrono` 뷰와 season 101 은 UI 에서 선택 불가능한 죽은 데이터여서 이관 때 버렸다.)
+지도 뷰의 `view_type` 은 `recommended | release | elflix`, `season` 은 1~3 이다. `(fangames, 0)` 은 지도가 아니라 팬게임 목록이다. (`chrono` 뷰와 season 101 은 UI 에서 선택 불가능한 죽은 데이터여서 이관 때 버렸다.)
 
 `image` 는 **상대 키**(`nodes/2/1769354330180.webp`)로 저장한다. 절대 URL 을 넣지 않으므로 서빙 호스트를 바꿔도 데이터를 건드릴 필요가 없다. 화면에 쓸 때 `imageUrl()` 로 감싼다.
 
@@ -135,6 +135,8 @@ D1 (SQLite). 스키마는 `data/schema.sql`, 원본 백업은 `data/backup/*.jso
 ## 클라이언트
 
 `src/lib/api.ts` 가 Worker 와 말하는 유일한 지점이다. 읽기/쓰기/이미지 URL/세션 토큰(sessionStorage)이 전부 여기 모여 있다.
+
+팬게임 목록은 관리자 모드에서 팬게임 창으로 등록한다. 전용 API 없이 `story_layouts` 의 `(fangames, 0)` 한 행에 `nodes` 로 저장한다. Worker 가 내용을 검사하지 않으므로 링크 검사는 `src/lib/fanGames.mjs` 에서 저장 전과 렌더 전에 한다. `node scripts/test-fan-games.mjs` 로 검증한다.
 
 `StoryCanvas.tsx` (PC, ~2600줄) 와 `MobileCanvas.tsx` (~1500줄) 는 같은 앱의 거의 독립적인 두 구현이다. `src/app/page.tsx` 가 user-agent 와 화면폭으로 고르고, 수동 토글은 `localStorage.view_mode` 에 남는다. **공통 동작을 고칠 때는 대개 두 곳 다 고쳐야 한다.** 모바일은 `m_x`/`m_y` 를, PC 는 `x`/`y` 를 읽는다.
 

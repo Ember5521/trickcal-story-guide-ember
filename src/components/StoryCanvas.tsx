@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef, memo } from '
 import {
     Plus, Trash2, Settings, User, Youtube, Search,
     ChevronLeft, ChevronRight, Maximize2, Minimize2,
-    X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone, Bell,
+    X, RotateCcw, Home, StickyNote, Info, Monitor, Smartphone, Bell, Gamepad2,
     Image as ImageIcon, Shield, Library, Lightbulb, Save, MapPin, HelpCircle, FileSpreadsheet, Frame
 } from 'lucide-react';
 import * as api from '../lib/api';
@@ -13,6 +13,7 @@ import { canUndo, createUndoStack, layoutSignature, record, undo as popUndo } fr
 import { resolveAnchor } from '../lib/curation.mjs';
 import CurationNode from '@/components/CurationNode';
 import BoardNode from '@/components/BoardNode';
+import FanGamesModal from '@/components/FanGamesModal';
 import YouTubeEmbed from './YouTubeEmbed';
 import ReactFlow, {
     BaseEdge,
@@ -277,6 +278,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
     const [libraryCategory, setLibraryCategory] = useState<'main' | 'theme' | 'etc' | 'special' | 'annotation' | 'board'>('main');
     const [masterSearchQuery, setMasterSearchQuery] = useState('');
     const [showUpdateLog, setShowUpdateLog] = useState(false);
+    const [showFanGames, setShowFanGames] = useState(false);
     const [updateLogContent, setUpdateLogContent] = useState('');
     const [lastUpdateAt, setLastUpdateAt] = useState<string | null>(null);
     const [hasNewUpdate, setHasNewUpdate] = useState(false);
@@ -1830,12 +1832,18 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             onPointerLeave={cancelAdminPress}
                             onPointerCancel={cancelAdminPress}
                             onContextMenu={e => e.preventDefault()}
-                            className="p-2 md:p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 transition-all border border-slate-700 select-none"
+                            className={`p-2 md:p-2.5 rounded-xl transition-all border select-none relative ${hasNewUpdate
+                                ? 'bg-lime-500/20 border-lime-500/50 text-lime-400 shadow-[0_0_15px_rgba(163,230,53,0.3)]'
+                                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 border-slate-700'
+                                }`}
                             title="가이드 안내"
                             data-tutorial="info"
-                            data-tutorial-label="가이드 정보"
+                            data-tutorial-label="가이드 정보 · 업데이트 노트"
                         >
                             <Info size={16} className="md:w-[18px] md:h-[18px]" />
+                            {hasNewUpdate && (
+                                <span className="absolute -top-1 -right-1 w-2 h-2 bg-lime-500 rounded-full border border-slate-900 animate-bounce" />
+                            )}
                         </button>
 
                         <button
@@ -1848,29 +1856,15 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                             <Smartphone size={16} className="md:w-[18px] md:h-[18px]" />
                         </button>
 
-                        <div className="relative">
-                            <button
-                                onClick={() => {
-                                    setShowUpdateLog(true);
-                                    if (hasNewUpdate) {
-                                        setHasNewUpdate(false);
-                                        localStorage.setItem('last_read_update_at', lastUpdateAt || new Date().toISOString());
-                                    }
-                                }}
-                                className={`p-2 md:p-2.5 rounded-xl border transition-all active:scale-95 group relative ${hasNewUpdate
-                                    ? 'bg-lime-500/20 border-lime-500/50 text-lime-400 shadow-[0_0_15px_rgba(163,230,53,0.3)]'
-                                    : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-indigo-400 hover:bg-slate-700'
-                                    }`}
-                                title="업데이트 노트"
-                                data-tutorial="bell"
-                                data-tutorial-label="업데이트 노트 확인"
-                            >
-                                <Bell size={16} className={`md:w-[18px] md:h-[18px] ${hasNewUpdate ? 'animate-pulse' : ''}`} />
-                                {hasNewUpdate && (
-                                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-lime-500 rounded-full border border-slate-900 animate-bounce" />
-                                )}
-                            </button>
-                        </div>
+                        <button
+                            onClick={() => setShowFanGames(true)}
+                            className="p-2 md:p-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 rounded-xl border border-slate-700 transition-all active:scale-95 shrink-0"
+                            title="팬게임"
+                            data-tutorial="fangames"
+                            data-tutorial-label="팬게임 사이트 모음"
+                        >
+                            <Gamepad2 size={16} className="md:w-[18px] md:h-[18px]" />
+                        </button>
 
                         {isAdmin && (
                             <div className="flex items-center gap-1.5 md:gap-2 border-l border-slate-700 pl-2">
@@ -2651,6 +2645,7 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                     </button>
                 </div>
             )}
+            {showFanGames && <FanGamesModal isAdmin={isAdmin} onClose={() => setShowFanGames(false)} />}
             {/* Developer Update Log Modal */}
             {showUpdateLog && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[300] flex items-center justify-center p-4">
@@ -2826,6 +2821,26 @@ function StoryCanvasInner({ onToggleView, isMobileView }: { onToggleView: () => 
                                 )}
                             </button>
                         </div>
+
+                        {/* Update Log Button */}
+                        <button
+                            onClick={() => {
+                                setShowInfo(false);
+                                localStorage.setItem('intro_completed', 'true');
+                                setShowUpdateLog(true);
+                                if (hasNewUpdate) {
+                                    setHasNewUpdate(false);
+                                    localStorage.setItem('last_read_update_at', lastUpdateAt || new Date().toISOString());
+                                }
+                            }}
+                            className={`w-full py-3 rounded-xl border text-sm font-bold transition-all flex items-center justify-center gap-2 mb-3 ${hasNewUpdate
+                                ? 'bg-lime-500/20 hover:bg-lime-500/30 border-lime-500/50 text-lime-400'
+                                : 'bg-slate-800/50 hover:bg-slate-700 border-slate-700 text-slate-300'
+                                }`}
+                        >
+                            <Bell size={16} className={hasNewUpdate ? 'animate-pulse' : ''} />
+                            업데이트 노트 보기
+                        </button>
 
                         {/* Tutorial Button */}
                         <button
